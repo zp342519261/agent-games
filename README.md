@@ -14,13 +14,11 @@
 
 ## 安装（skills.sh / Cursor）
 
-将 `YOUR_GITHUB_USER` 换成你的 GitHub 用户名：
-
 ```bash
-npx skills add YOUR_GITHUB_USER/nlhe -g -a cursor -s nlhe -y
+npx skills add zp342519261/nlhe -g -a cursor -s nlhe -y
 ```
 
-[![skills.sh](https://skills.sh/b/YOUR_GITHUB_USER/nlhe)](https://skills.sh/b/YOUR_GITHUB_USER/nlhe)
+[![skills.sh](https://skills.sh/b/zp342519261/nlhe)](https://skills.sh/b/zp342519261/nlhe)
 
 ## 使用
 
