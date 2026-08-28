@@ -1,0 +1,10 @@
+{
+  "id": "6max_100bb_bb_vs_btn_open",
+  "meta_ref": "preflop-6max-100bb",
+  "actions": ["fold", "call", "raise"],
+  "combos": {
+    "AA": {"raise": 0.85, "call": 0.15},
+    "AKs": {"raise": 0.70, "call": 0.30},
+    "72o": {"fold": 1.0}
+  }
+}

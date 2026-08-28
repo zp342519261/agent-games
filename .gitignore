@@ -1,0 +1,19 @@
+# 本地运行态（用户项目内生成，不应进 skill 仓库）
+.nlhe/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# 环境与密钥
+.env
+.env.*
+*.pem
+credentials.json
+
+# OS / 编辑器
+.DS_Store
+.idea/
+.vscode/

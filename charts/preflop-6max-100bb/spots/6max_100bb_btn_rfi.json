@@ -1,0 +1,12 @@
+{
+  "id": "6max_100bb_btn_rfi",
+  "meta_ref": "preflop-6max-100bb",
+  "actions": ["fold", "raise"],
+  "combos": {
+    "AA": {"raise": 1.0},
+    "AKs": {"raise": 1.0},
+    "AKo": {"raise": 1.0},
+    "J9o": {"fold": 0.55, "raise": 0.45},
+    "72o": {"fold": 1.0}
+  }
+}
