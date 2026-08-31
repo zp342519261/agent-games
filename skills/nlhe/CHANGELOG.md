@@ -1,6 +1,7 @@
 # NLHE Changelog
 
 ## 1.5.2
+- **仓库**：迁入合集 `zp342519261/agent-games`（路径 `skills/nlhe/`）；安装改为 `npx skills add zp342519261/agent-games -g -a cursor -s nlhe -y`
 - **skills.sh 更新提醒**：新增 `skills-check` 命令；`init` 配置页展示 `npx skills check/update` 指引；SKILL 工作流会话首检 skill 包
 
 ## 1.5.1

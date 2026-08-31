@@ -78,6 +78,12 @@ Agent 仅在需要规则细节、状态字段或 UI 解读时读本文件。
 
 ### 两层更新
 
+首次安装 / 换源重装：
+
+```bash
+npx skills add zp342519261/agent-games -g -a cursor -s nlhe -y
+```
+
 | 层 | 位置 | 检查 | 更新 |
 |----|------|------|------|
 | **Skill 包** | `~/.cursor/skills/nlhe/` | `npx skills check nlhe -g` 或 `/NLHE skills-check` | `npx skills update nlhe -g -y` |

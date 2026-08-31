@@ -1304,7 +1304,7 @@ def render_skills_pkg_static_hint() -> list[str]:
         lines.extend(
             [
                 f"  本地 VERSION {skill_v}（未在 skills lock 中，可能为手动 cp 安装）",
-                "  若通过 skills.sh 安装: npx skills add OWNER/nlhe -g -a cursor -s nlhe -y",
+                "  若通过 skills.sh 安装: npx skills add zp342519261/agent-games -g -a cursor -s nlhe -y",
                 "  检查更新: npx skills check nlhe -g",
             ]
         )
@@ -1380,7 +1380,7 @@ def render_skills_check_report(result: dict[str, Any]) -> str:
         lines.extend(
             [
                 "status:       NOT_TRACKED（未通过 npx skills -g 安装）",
-                "action:       npx skills add OWNER/nlhe -g -a cursor -s nlhe -y",
+                "action:       npx skills add zp342519261/agent-games -g -a cursor -s nlhe -y",
             ]
         )
     elif status == "update_available":
