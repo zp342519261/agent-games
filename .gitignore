@@ -17,3 +17,6 @@ credentials.json
 .DS_Store
 .idea/
 .vscode/
+
+# Git worktrees
+.worktrees/
