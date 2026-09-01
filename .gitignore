@@ -1,5 +1,6 @@
 # 本地运行态（用户项目内生成，不应进 skill 仓库）
 .nlhe/
+.soup/
 
 # Python
 __pycache__/
