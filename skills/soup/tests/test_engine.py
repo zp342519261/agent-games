@@ -209,5 +209,28 @@ class TestLogRevealNext(CwdTest):
         self.assertNotIn(TRUTH, out)
 
 
+class TestSkillDocs(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(__file__).resolve().parents[1]
+
+    def test_skill_frontmatter_and_rules(self):
+        text = (self.root / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("name: soup", text)
+        self.assertIn("disable-model-invocation: true", text)
+        self.assertIn("/海龟汤", text)
+        self.assertIn("SOUP_UI_BEGIN", text)
+        self.assertIn("先写完整汤底", text)
+        self.assertIn("secret", text)
+        self.assertIn("禁止", text)
+        for ans in ("是", "不是", "无关", "接近了"):
+            self.assertIn(ans, text)
+
+    def test_reference_has_no_complete_soup_bank(self):
+        text = (self.root / "reference.md").read_text(encoding="utf-8")
+        self.assertIn("烂汤", text)
+        self.assertIn("自检", text)
+        self.assertNotIn("soups.json", text)
+
+
 if __name__ == "__main__":
     unittest.main()
