@@ -217,6 +217,57 @@ def cmd_secret(_: argparse.Namespace) -> None:
     print(st["truth"] or "")
 
 
+def cmd_log(args: argparse.Namespace) -> None:
+    st = load_state()
+    if st is None or st["status"] != "playing":
+        die("只能在进行中记录问答")
+    if args.a not in ANSWERS:
+        die(f"回答必须是：{' / '.join(ANSWERS)}")
+    q = (args.q or "").strip()
+    if not q:
+        die("问题不能为空")
+    st["qa"].append({"q": q, "a": args.a})
+    save_state(st)
+    emit_ui(render(st))
+
+
+def cmd_reveal(args: argparse.Namespace) -> None:
+    if not args.won:
+        die("reveal 需要 --won")
+    st = load_state()
+    if st is None or st["status"] != "playing":
+        die("只能在进行中揭底")
+    st["status"] = "revealed"
+    st["outcome"] = "won"
+    save_state(st)
+    emit_ui(render(st))
+
+
+def cmd_giveup(_: argparse.Namespace) -> None:
+    st = load_state()
+    if st is None or st["status"] != "playing":
+        die("只能在进行中认输")
+    st["status"] = "revealed"
+    st["outcome"] = "given_up"
+    save_state(st)
+    emit_ui(render(st))
+
+
+def cmd_next(_: argparse.Namespace) -> None:
+    st = load_state()
+    if st is None:
+        die("还没有配置，请先 init")
+    if st["status"] == "configuring":
+        emit_ui(render_config(st))
+        return
+    theme, difficulty = st["theme"], st["difficulty"]
+    st = default_state()
+    st["theme"] = theme
+    st["difficulty"] = difficulty
+    save_state(st)
+    emit_ui(render_config(st))
+
+
 def cmd_help(_: argparse.Namespace) -> None:
     print(
         f"""
@@ -263,6 +314,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     sec = sub.add_parser("secret")
     sec.set_defaults(func=cmd_secret)
+
+    lg = sub.add_parser("log")
+    lg.add_argument("--q", required=True)
+    lg.add_argument("--a", required=True)
+    lg.set_defaults(func=cmd_log)
+
+    rev = sub.add_parser("reveal")
+    rev.add_argument("--won", action="store_true")
+    rev.set_defaults(func=cmd_reveal)
+
+    gu = sub.add_parser("giveup")
+    gu.set_defaults(func=cmd_giveup)
+
+    nxt = sub.add_parser("next")
+    nxt.set_defaults(func=cmd_next)
 
     hp = sub.add_parser("help")
     hp.set_defaults(func=cmd_help)

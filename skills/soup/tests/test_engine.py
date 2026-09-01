@@ -144,5 +144,70 @@ class TestStartInfoSecret(CwdTest):
         self.assertIn("ERROR", err)
 
 
+class TestLogRevealNext(CwdTest):
+    def _play(self):
+        run(["init"])
+        run(["set", "--theme", "校园", "--difficulty", "困难"])
+        run([
+            "start", "--surface", SURFACE, "--truth", TRUTH,
+            "--theme-resolved", "校园",
+        ])
+
+    def test_log_appears_in_info(self):
+        self._play()
+        code, out, _ = run(["log", "--q", "他是自杀的吗？", "--a", "不是"])
+        self.assertEqual(code, 0)
+        self.assertIn("他是自杀的吗？", out)
+        self.assertIn("不是", out)
+        self.assertNotIn(TRUTH, out)
+
+    def test_log_rejects_bad_answer(self):
+        self._play()
+        code, _, err = run(["log", "--q", "？", "--a", "也许"])
+        self.assertNotEqual(code, 0)
+        self.assertIn("ERROR", err)
+        self.assertEqual(soup.load_state()["qa"], [])
+
+    def test_reveal_won_shows_truth(self):
+        self._play()
+        code, out, _ = run(["reveal", "--won"])
+        self.assertEqual(code, 0)
+        self.assertIn(TRUTH, out)
+        self.assertIn("汤底", out)
+        self.assertEqual(soup.load_state()["status"], "revealed")
+        self.assertEqual(soup.load_state()["outcome"], "won")
+
+    def test_giveup_shows_truth(self):
+        self._play()
+        code, out, _ = run(["giveup"])
+        self.assertEqual(code, 0)
+        self.assertIn(TRUTH, out)
+        self.assertEqual(soup.load_state()["outcome"], "given_up")
+
+    def test_init_during_play_does_not_clobber(self):
+        self._play()
+        code, _, err = run(["init"])
+        self.assertNotEqual(code, 0)
+        self.assertIn("ERROR", err)
+        self.assertEqual(soup.load_state()["status"], "playing")
+        self.assertEqual(soup.load_state()["truth"], TRUTH)
+
+    def test_next_back_to_config_keeps_theme(self):
+        self._play()
+        run(["giveup"])
+        code, out, _ = run(["next"])
+        self.assertEqual(code, 0)
+        st = soup.load_state()
+        self.assertEqual(st["status"], "configuring")
+        self.assertEqual(st["theme"], "校园")
+        self.assertEqual(st["difficulty"], "困难")
+        self.assertIsNone(st["surface"])
+        self.assertIsNone(st["truth"])
+        self.assertEqual(st["qa"], [])
+        self.assertIsNone(st["theme_resolved"])
+        self.assertNotIn(SURFACE, out)
+        self.assertNotIn(TRUTH, out)
+
+
 if __name__ == "__main__":
     unittest.main()
