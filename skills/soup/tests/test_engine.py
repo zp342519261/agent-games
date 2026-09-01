@@ -231,6 +231,10 @@ class TestSkillDocs(unittest.TestCase):
         self.assertIn("自检", text)
         self.assertNotIn("soups.json", text)
 
+    def test_version_file(self):
+        v = (self.root / "VERSION").read_text(encoding="utf-8").strip()
+        self.assertEqual(v, "1.0.0")
+
 
 if __name__ == "__main__":
     unittest.main()
