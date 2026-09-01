@@ -121,6 +121,102 @@ def cmd_set(args: argparse.Namespace) -> None:
     emit_ui(render_config(st))
 
 
+def char_len(text: str) -> int:
+    return len(text.strip())
+
+
+def render_play(st: dict[str, Any], notice: str = "") -> str:
+    lines = [
+        "海龟汤 · 进行中",
+        "",
+        f"{theme_line(st)}    难度：{st['difficulty']}",
+        "",
+        "汤面",
+        "------",
+        st["surface"] or "",
+        "",
+        "问答",
+        "------",
+    ]
+    qa = st.get("qa") or []
+    if not qa:
+        lines.append("还没有提问。")
+    else:
+        for i, item in enumerate(qa, start=1):
+            lines.append(f"{i}. {item['q']}")
+            lines.append(f"   → {item['a']}")
+    lines += [
+        "",
+        "直接提问  |  说出完整猜想  |  giveup 认输  |  next 新开一局",
+    ]
+    if notice:
+        lines = [notice, ""] + lines
+    return "\n".join(lines)
+
+
+def render_revealed(st: dict[str, Any]) -> str:
+    outcome = "猜对" if st.get("outcome") == "won" else "认输"
+    play = render_play(st).replace("海龟汤 · 进行中", f"海龟汤 · 结束（{outcome}）", 1)
+    extra = [
+        "",
+        "汤底",
+        "------",
+        st["truth"] or "",
+        "",
+        "next 回到配置，再编一碗。",
+    ]
+    return play + "\n" + "\n".join(extra)
+
+
+def render(st: dict[str, Any], notice: str = "") -> str:
+    status = st["status"]
+    if status == "configuring":
+        return render_config(st, notice=notice)
+    if status == "playing":
+        return render_play(st, notice=notice)
+    return render_revealed(st)
+
+
+def cmd_start(args: argparse.Namespace) -> None:
+    st = load_state()
+    if st is None or st["status"] != "configuring":
+        die("只能在配置确认后 start")
+    surface = (args.surface or "").strip()
+    truth = (args.truth or "").strip()
+    resolved = args.theme_resolved
+    n_s, n_t = char_len(surface), char_len(truth)
+    if n_s < SURFACE_MIN or n_s > SURFACE_MAX:
+        die(f"汤面须为 {SURFACE_MIN}～{SURFACE_MAX} 字（当前 {n_s}）")
+    if n_t < TRUTH_MIN:
+        die(f"汤底须不少于 {TRUTH_MIN} 字（当前 {n_t}）")
+    if resolved not in THEMES_RESOLVED:
+        die(f"theme-resolved 必须是：{' / '.join(THEMES_RESOLVED)}")
+    if st["theme"] != "随机" and resolved != st["theme"]:
+        die("theme-resolved 必须与已选主题一致")
+    st["surface"] = surface
+    st["truth"] = truth
+    st["theme_resolved"] = resolved
+    st["qa"] = []
+    st["outcome"] = None
+    st["status"] = "playing"
+    save_state(st)
+    emit_ui(render(st))
+
+
+def cmd_info(_: argparse.Namespace) -> None:
+    st = load_state()
+    if st is None:
+        die("还没有配置，请先 init")
+    emit_ui(render(st))
+
+
+def cmd_secret(_: argparse.Namespace) -> None:
+    st = load_state()
+    if st is None or st["status"] != "playing":
+        die("只能在进行中读取汤底")
+    print(st["truth"] or "")
+
+
 def cmd_help(_: argparse.Namespace) -> None:
     print(
         f"""
@@ -155,6 +251,18 @@ def build_parser() -> argparse.ArgumentParser:
     st.add_argument("--theme", default=None)
     st.add_argument("--difficulty", default=None)
     st.set_defaults(func=cmd_set)
+
+    start = sub.add_parser("start")
+    start.add_argument("--surface", required=True)
+    start.add_argument("--truth", required=True)
+    start.add_argument("--theme-resolved", required=True, dest="theme_resolved")
+    start.set_defaults(func=cmd_start)
+
+    info = sub.add_parser("info")
+    info.set_defaults(func=cmd_info)
+
+    sec = sub.add_parser("secret")
+    sec.set_defaults(func=cmd_secret)
 
     hp = sub.add_parser("help")
     hp.set_defaults(func=cmd_help)
