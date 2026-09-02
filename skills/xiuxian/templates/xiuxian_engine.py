@@ -564,6 +564,7 @@ def new_run(meta: dict[str, Any], seed: int) -> dict[str, Any]:
         "body": None,
         "outline": None,
         "chronicle": [],
+        "chronicle_trimmed": False,
         "pending_log": False,
         "death_cause": None,
         "next_p": _next_uid(meta["inventory"]),
@@ -722,8 +723,6 @@ def cmd_inscribe(args: argparse.Namespace) -> None:
     st = require_state()
     if st["status"] != "composing":
         die("只能在 composing 时 inscribe")
-    ensure_after(st)
-    save_state(st)
     run = st["run"]
     try:
         outline = validate_outline(args.outline)
@@ -774,6 +773,7 @@ def cmd_inscribe(args: argparse.Namespace) -> None:
     except ValueError as exc:
         die(str(exc))
 
+    ensure_after(st)
     run["outline"] = outline
     run["body"] = body
     run["choices"] = choices
@@ -838,6 +838,8 @@ def append_chronicle(st: dict[str, Any], act: str, facts: dict[str, Any]) -> Non
             "after": None,
         }
     )
+    if len(run["chronicle"]) > 40:
+        run["chronicle_trimmed"] = True
     run["chronicle"] = run["chronicle"][-40:]
     run["pending_log"] = True
 
@@ -1401,9 +1403,12 @@ def cmd_log(args: argparse.Namespace) -> None:
     print("经历已补写")
 
 
-def _render_chronicle(entries: list[dict[str, Any]]) -> str:
+def _render_chronicle(
+    entries: list[dict[str, Any]],
+    trimmed: bool = False,
+) -> str:
     lines = []
-    if len(entries) > 40:
+    if trimmed or len(entries) > 40:
         lines.append("（仅显示最近 40 条，较早经历已截断）")
     for entry in entries[-40:]:
         lines.extend(
@@ -1429,7 +1434,10 @@ def cmd_recall(_: argparse.Namespace) -> None:
         body = "\n".join(
             [
                 f"【轮回系统】第{st['meta']['cycles'] + 1}世经历",
-                _render_chronicle(st["run"]["chronicle"]),
+                _render_chronicle(
+                    st["run"]["chronicle"],
+                    st["run"].get("chronicle_trimmed", False),
+                ),
             ]
         )
     emit_ui(body)

@@ -816,6 +816,21 @@ class TestChronicle(CwdTest):
             "选1；气血20/20；未战；下层",
         )
 
+    def test_illegal_inscribe_preserves_pending_log_state(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        inscribe_ok()
+        force_effects("hp+4", "qi+3", "maxhp+2")
+        run(["choose", "--n", "1"])
+        before = xx.load_state()
+
+        code, _, err = run(["inscribe", "--outline", "太短"])
+
+        self.assertNotEqual(code, 0)
+        self.assertIn("ERROR", err)
+        self.assertTrue(before["run"]["pending_log"])
+        self.assertEqual(xx.load_state(), before)
+
     def test_log_without_pending_errors(self):
         run(["init"])
 
@@ -905,6 +920,32 @@ class TestChronicle(CwdTest):
         chronicle = xx.load_state()["run"]["chronicle"]
         self.assertEqual(len(chronicle), 40)
         self.assertEqual(chronicle[0]["floor"], 2)
+
+    def test_recall_notes_when_chronicle_was_trimmed(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        st = xx.load_state()
+        st["run"]["outline"] = OUTLINE
+        st["run"]["chronicle"] = [
+            {
+                "floor": i,
+                "node": "event",
+                "realm": "炼气",
+                "setup": OUTLINE,
+                "act": "choose:1",
+                "facts": "气血20/20",
+                "after": "机械",
+            }
+            for i in range(1, 41)
+        ]
+
+        xx.append_chronicle(st, "choose:1", "气血20/20")
+        xx.save_state(st)
+        _, out, _ = run(["recall"])
+
+        self.assertTrue(st["run"].get("chronicle_trimmed", False))
+        self.assertEqual(len(st["run"]["chronicle"]), 40)
+        self.assertIn("截断", out)
 
 
 class TestRebirth(CwdTest):
