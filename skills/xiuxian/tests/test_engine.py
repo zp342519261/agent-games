@@ -286,6 +286,97 @@ class TestInscribe(CwdTest):
         self.assertEqual(xx.trib_chances(run_state), (14, 42, 5))
 
 
+class TestTribulation(CwdTest):
+    def _start_tribulation(self, *, atk=3, qi=0, seed=1):
+        run(["init"])
+        st = xx.load_state()
+        st["meta"]["exp"] = 50
+        st["meta"]["atk"] = atk
+        st["meta"]["qi"] = qi
+        xx.save_state(st)
+        run(["start", "--seed", str(seed)])
+
+    def _inscribe_tribulation(self):
+        return run(
+            [
+                "inscribe",
+                "--outline", OUTLINE,
+                "--body", "天劫云压顶，三道雷纹在识海里转。系统冷冰冰列出三条渡法。",
+                "--c1", "硬渡",
+                "--c2", "护体",
+                "--c3", "心魔问道",
+            ]
+        )
+
+    def test_exp_forces_trib_floor_and_draft_shows_chances(self):
+        self._start_tribulation()
+
+        st = xx.load_state()
+        self.assertEqual(st["run"]["node_type"], "tribulation")
+        code, out, err = run(["draft"])
+        self.assertEqual((code, err), (0, ""))
+        self.assertIn("hard=", out)
+        self.assertIn("guard=", out)
+        self.assertIn("heart=", out)
+
+    def test_trib_use_rejected(self):
+        self._start_tribulation()
+        self._inscribe_tribulation()
+        st = xx.load_state()
+        st["run"]["inventory"] = [
+            {"uid": "p1", "type": "dan", "fx": "hp", "n": 8, "name": "蛇丹"}
+        ]
+        xx.save_state(st)
+
+        code, _, err = run(["use", "--id", "p1"])
+
+        self.assertNotEqual(code, 0)
+        self.assertIn("ERROR", err)
+
+    def test_trib_success_raises_both_realms_and_continues(self):
+        self._start_tribulation(atk=30, qi=30, seed=1)
+        st = xx.load_state()
+        self.assertEqual(xx.trib_chances(st["run"])[0], 95)
+        self.assertLessEqual(
+            xx.trib_roll(st["run"]["seed"], st["run"]["floor"]),
+            95,
+        )
+        self._inscribe_tribulation()
+
+        run(["choose", "--n", "1"])
+
+        st = xx.load_state()
+        self.assertEqual(st["status"], "composing")
+        self.assertEqual(st["run"]["realm"], "筑基")
+        self.assertEqual(st["meta"]["realm"], "筑基")
+        self.assertEqual(st["run"]["floor"], 2)
+
+    def test_trib_failure_ends_without_consuming_revive(self):
+        self._start_tribulation(seed=1)
+        self.assertGreater(xx.trib_roll(1, 1), 5)
+        self._inscribe_tribulation()
+        st = xx.load_state()
+        st["run"]["inventory"] = [
+            {"uid": "p1", "type": "dan", "fx": "revive", "n": 1, "name": "续命丹"}
+        ]
+        xx.save_state(st)
+
+        run(["choose", "--n", "3"])
+
+        st = xx.load_state()
+        self.assertEqual(st["status"], "ended")
+        self.assertEqual(st["run"]["death_cause"], "tribulation")
+        self.assertFalse(st["run"]["revive_used"])
+        self.assertEqual(len(st["run"]["inventory"]), 1)
+
+    def test_huashen_never_needs_tribulation(self):
+        meta = xx.default_meta()
+        meta["exp"] = 999
+        meta["realm"] = "化神"
+
+        self.assertFalse(xx.need_tribulation(meta, "化神"))
+
+
 class TestChooseGrant(CwdTest):
     def _choosing(self):
         run(["init"])

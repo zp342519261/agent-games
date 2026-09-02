@@ -471,6 +471,10 @@ def trib_chances(run: dict[str, Any]) -> tuple[int, int, int]:
     return hard, guard, heart
 
 
+def trib_roll(seed: int, floor: int) -> int:
+    return random.Random(seed + 90001 + floor).randint(1, 100)
+
+
 def need_tribulation(meta: dict[str, Any], run_realm: str) -> bool:
     nxt = next_realm(run_realm)
     if nxt is None:
@@ -652,6 +656,15 @@ def cmd_draft(_: argparse.Namespace) -> None:
         f"chronicle_tail={json.dumps(run['chronicle'][-3:], ensure_ascii=False)}",
         f"prev_digest={st['meta']['lives'][-1]['digest'] if st['meta']['lives'] else ''}",
     ]
+    if run["node_type"] == "tribulation":
+        hard, guard, heart = trib_chances(run)
+        lines.extend(
+            [
+                f"hard={hard}",
+                f"guard={guard}",
+                f"heart={heart}",
+            ]
+        )
     print("\n".join(lines))
 
 
@@ -1091,6 +1104,21 @@ def _render_choice_result(
     return "\n".join(lines)
 
 
+def resolve_trib(st: dict[str, Any], n: int) -> bool:
+    run = st["run"]
+    chance = trib_chances(run)[n - 1]
+    if trib_roll(run["seed"], run["floor"]) > chance:
+        run["death_cause"] = "tribulation"
+        return False
+
+    realm = next_realm(run["realm"])
+    if realm is None:
+        raise ValueError("化神境无须渡劫")
+    run["realm"] = realm
+    st["meta"]["realm"] = realm
+    return True
+
+
 def cmd_choose(args: argparse.Namespace) -> None:
     st = require_state()
     if st["status"] != "choosing":
@@ -1098,6 +1126,17 @@ def cmd_choose(args: argparse.Namespace) -> None:
     run = st["run"]
     choice = run["choices"][args.n - 1]
     parsed = choice["parsed"]
+    if run["node_type"] == "tribulation":
+        resolve_trib(st, args.n)
+        facts = _facts_text(run, choice["effect"], None, None)
+        result_ui = _render_choice_result(run, choice, None)
+        append_chronicle(st, f"choose:{args.n}", facts)
+        _award_floor_exp(st)
+        advance_or_end(st)
+        save_state(st)
+        emit_ui(result_ui)
+        return
+
     before_counts = {
         "inventory": len(run["inventory"]),
         "allies": len(run["allies"]),
