@@ -630,6 +630,7 @@ def render_hub(st: dict[str, Any], notice: str = "") -> str:
         f"死物：{used}/{cap}",
         f"功法：{len(m['skills'])}/3",
         f"前世：{lives}",
+        *[f"- {life['digest']}" for life in m["lives"]],
         "",
         "确认后 start 开启新一世。活物不会出现在这里。",
     ]
@@ -663,10 +664,6 @@ def cmd_help(_: argparse.Namespace) -> None:
     )
 
 
-def cmd_stub(_: argparse.Namespace) -> None:
-    die("未实现")
-
-
 def cmd_start(args: argparse.Namespace) -> None:
     st = require_state()
     if st["status"] != "hub":
@@ -693,6 +690,8 @@ def cmd_draft(_: argparse.Namespace) -> None:
     st = require_state()
     if st["status"] != "composing":
         die("只能在 composing 时 draft")
+    ensure_after(st)
+    save_state(st)
     run = st["run"]
     lines = [
         f"floor={run['floor']}",
@@ -723,6 +722,8 @@ def cmd_inscribe(args: argparse.Namespace) -> None:
     st = require_state()
     if st["status"] != "composing":
         die("只能在 composing 时 inscribe")
+    ensure_after(st)
+    save_state(st)
     run = st["run"]
     try:
         outline = validate_outline(args.outline)
@@ -839,6 +840,37 @@ def append_chronicle(st: dict[str, Any], act: str, facts: dict[str, Any]) -> Non
     )
     run["chronicle"] = run["chronicle"][-40:]
     run["pending_log"] = True
+
+
+def mechanical_after(entry: dict[str, Any], run_snapshot: dict[str, Any]) -> str:
+    act = entry["act"]
+    if act.startswith("choose:"):
+        act_label = f"选{act.split(':', 1)[1]}"
+    elif act.startswith("use:"):
+        act_label = f"用{act.split(':', 1)[1]}"
+    elif act == "giveup":
+        act_label = "自绝"
+    else:
+        act_label = act
+
+    facts = str(entry.get("facts", ""))
+    battle = "战胜" if "战胜" in facts else "战败" if "战败" in facts else "未战"
+    destination = "身死" if run_snapshot.get("death_cause") else "下层"
+    return (
+        f"{act_label}；气血{run_snapshot['hp']}/{run_snapshot['max_hp']}；"
+        f"{battle}；{destination}"
+    )
+
+
+def ensure_after(st: dict[str, Any]) -> None:
+    run = st.get("run")
+    if not run or not run.get("pending_log"):
+        return
+    if not run["chronicle"]:
+        run["pending_log"] = False
+        return
+    run["chronicle"][-1]["after"] = mechanical_after(run["chronicle"][-1], run)
+    run["pending_log"] = False
 
 
 def advance_or_end(st: dict[str, Any]) -> None:
@@ -1355,6 +1387,54 @@ def cmd_info(_: argparse.Namespace) -> None:
     emit_ui(body)
 
 
+def cmd_log(args: argparse.Namespace) -> None:
+    st = require_state()
+    run = st.get("run")
+    if not run or not run.get("pending_log") or not run["chronicle"]:
+        die("当前没有待补写的经历")
+    after = args.after.strip()
+    if not 20 <= len(after) <= 80:
+        die("after 长度须为 20～80")
+    run["chronicle"][-1]["after"] = after
+    run["pending_log"] = False
+    save_state(st)
+    print("经历已补写")
+
+
+def _render_chronicle(entries: list[dict[str, Any]]) -> str:
+    lines = []
+    if len(entries) > 40:
+        lines.append("（仅显示最近 40 条，较早经历已截断）")
+    for entry in entries[-40:]:
+        lines.extend(
+            [
+                f"第{entry['floor']}层 · {entry['realm']}",
+                f"起：{entry['setup'] or '无'}",
+                f"行：{entry['act']}｜{entry['facts']}",
+                f"后：{entry['after'] or '待补写'}",
+            ]
+        )
+    return "\n".join(lines) if lines else "暂无经历"
+
+
+def cmd_recall(_: argparse.Namespace) -> None:
+    st = require_state()
+    if st["status"] == "hub":
+        lives = st["meta"]["lives"]
+        body = "\n".join(
+            ["【轮回系统】前世录"]
+            + ([life["digest"] for life in lives] if lives else ["暂无前世"])
+        )
+    else:
+        body = "\n".join(
+            [
+                f"【轮回系统】第{st['meta']['cycles'] + 1}世经历",
+                _render_chronicle(st["run"]["chronicle"]),
+            ]
+        )
+    emit_ui(body)
+
+
 def cmd_giveup(_: argparse.Namespace) -> None:
     st = require_state()
     if st["status"] not in {"composing", "choosing"}:
@@ -1372,9 +1452,30 @@ def cmd_next(_: argparse.Namespace) -> None:
     if st["status"] != "ended":
         die("只能在 ended 时 next")
 
+    ensure_after(st)
+    run = st["run"]
+    meta = st["meta"]
+    cause = DEATH_LABEL.get(run["death_cause"], "未知")
+    last_after = run["chronicle"][-1]["after"] if run["chronicle"] else ""
+    digest = (
+        f"第{meta['cycles'] + 1}世 · {run['realm']} · "
+        f"历{run['floor']}层 · 死于{cause}"
+    )
+    if last_after:
+        digest += f" · {last_after[:20]}"
+    meta["lives"].append(
+        {
+            "cycle": meta["cycles"],
+            "death_cause": run["death_cause"],
+            "realm": run["realm"],
+            "floors": run["floor"],
+            "digest": digest,
+            "entries": [dict(entry) for entry in run["chronicle"][-15:]],
+        }
+    )
+    meta["lives"] = meta["lives"][-8:]
     preview = preview_rebirth(st)
     notice = "\n".join(["轮回完成：", _render_rebirth(st, preview)])
-    meta = st["meta"]
     meta.update(
         {
             "inventory": preview["kept_items"],
@@ -1419,14 +1520,13 @@ def build_parser() -> Parser:
     use = sub.add_parser("use")
     use.add_argument("--id", required=True)
     use.set_defaults(func=cmd_use)
+    log = sub.add_parser("log")
+    log.add_argument("--after", required=True)
+    log.set_defaults(func=cmd_log)
+    sub.add_parser("recall").set_defaults(func=cmd_recall)
     sub.add_parser("info").set_defaults(func=cmd_info)
     sub.add_parser("giveup").set_defaults(func=cmd_giveup)
     sub.add_parser("next").set_defaults(func=cmd_next)
-    for name in (
-        "log",
-        "recall",
-    ):
-        sub.add_parser(name).set_defaults(func=cmd_stub)
     return p
 
 

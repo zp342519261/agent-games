@@ -781,6 +781,132 @@ class TestDeaths(CwdTest):
         self.assertEqual(st["run"]["death_cause"], "backlash")
 
 
+class TestChronicle(CwdTest):
+    def test_log_after_and_recall(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        inscribe_ok()
+        force_effects("hp+4", "qi+3", "maxhp+2")
+        run(["choose", "--n", "1"])
+        after = "左灯熄灭，你把一缕余温收进气海，继续往矿脉深处走。"
+
+        code, out, err = run(["log", "--after", after])
+
+        self.assertEqual(code, 0, err)
+        st = xx.load_state()
+        self.assertFalse(st["run"]["pending_log"])
+        self.assertEqual(st["run"]["chronicle"][0]["after"], after)
+        code, out, _ = run(["recall"])
+        self.assertIn(xx.UI_BEGIN, out)
+        self.assertIn("矿洞", out)
+
+    def test_draft_fills_mechanical_after(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        inscribe_ok()
+        force_effects("hp+4", "qi+3", "maxhp+2")
+        run(["choose", "--n", "1"])
+
+        run(["draft"])
+
+        st = xx.load_state()
+        self.assertFalse(st["run"]["pending_log"])
+        self.assertEqual(
+            st["run"]["chronicle"][0]["after"],
+            "选1；气血20/20；未战；下层",
+        )
+
+    def test_log_without_pending_errors(self):
+        run(["init"])
+
+        code, _, err = run(["log", "--after", OUTLINE])
+
+        self.assertNotEqual(code, 0)
+        self.assertIn("ERROR", err)
+
+    def test_log_rejects_after_outside_length_limit(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        inscribe_ok()
+        force_effects("hp+4", "qi+3", "maxhp+2")
+        run(["choose", "--n", "1"])
+
+        code, _, err = run(["log", "--after", "太短"])
+
+        self.assertNotEqual(code, 0)
+        self.assertIn("ERROR", err)
+        self.assertTrue(xx.load_state()["run"]["pending_log"])
+
+    def test_next_writes_lives(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        run(["giveup"])
+
+        run(["next"])
+
+        lives = xx.load_state()["meta"]["lives"]
+        self.assertEqual(len(lives), 1)
+        self.assertIn("死于", lives[0]["digest"])
+        self.assertLessEqual(len(lives[0]["entries"]), 15)
+        code, out, _ = run(["recall"])
+        self.assertIn(lives[0]["digest"], out)
+
+    def test_lives_cap_8(self):
+        run(["init"])
+        for i in range(9):
+            st = xx.load_state()
+            st["status"] = "ended"
+            st["run"] = xx.new_run(st["meta"], i + 1)
+            st["run"]["death_cause"] = "given_up"
+            st["run"]["chronicle"] = []
+            st["run"]["pending_log"] = False
+            xx.save_state(st)
+            run(["next"])
+
+        self.assertEqual(len(xx.load_state()["meta"]["lives"]), 8)
+
+    def test_floor_past_nine(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        st = xx.load_state()
+        st["run"]["atk"] = 100
+        st["meta"]["exp"] = -100
+        xx.save_state(st)
+        for _ in range(9):
+            inscribe_ok()
+            force_effects("hp+4", "qi+3", "maxhp+2")
+            run(["choose", "--n", "1"])
+        st = xx.load_state()
+        self.assertGreaterEqual(st["run"]["floor"], 10)
+        self.assertEqual(st["status"], "composing")
+
+    def test_chronicle_cap_40(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        st = xx.load_state()
+        st["run"]["chronicle"] = [
+            {
+                "floor": i,
+                "node": "event",
+                "realm": "炼气",
+                "setup": OUTLINE,
+                "act": "choose:1",
+                "facts": "气血20/20",
+                "after": "机械",
+            }
+            for i in range(1, 41)
+        ]
+        xx.save_state(st)
+        inscribe_ok()
+        force_effects("hp+4", "qi+3", "maxhp+2")
+
+        run(["choose", "--n", "1"])
+
+        chronicle = xx.load_state()["run"]["chronicle"]
+        self.assertEqual(len(chronicle), 40)
+        self.assertEqual(chronicle[0]["floor"], 2)
+
+
 class TestRebirth(CwdTest):
     def _dead(self, **run_over):
         run(["init"])
