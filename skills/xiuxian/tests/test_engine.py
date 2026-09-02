@@ -27,6 +27,31 @@ def run(argv: list[str]) -> tuple[int, str, str]:
     return code, out.getvalue(), err.getvalue()
 
 
+def _e_for(role: str) -> str:
+    if role == "SAFE":
+        return "hp+4"
+    if role == "GREEDY":
+        return "atk+2;hp-3"
+    return "qi+3"
+
+
+def inscribe_ok(st=None):
+    st = st or xx.load_state()
+    roles = [s["role"] for s in st["run"]["slots"]]
+    args = [
+        "inscribe",
+        "--outline", OUTLINE,
+        "--body", "矿洞深处三盏灯摇晃，像在等人选路。风里有铁锈和药味。",
+        "--c1", "走近左灯",
+        "--c2", "走近中灯",
+        "--c3", "走近右灯",
+        "--e1", _e_for(roles[0]),
+        "--e2", _e_for(roles[1]),
+        "--e3", _e_for(roles[2]),
+    ]
+    return run(args)
+
+
 class CwdTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -140,6 +165,105 @@ class TestStartDraft(CwdTest):
         code, _, err = run(["start"])
         self.assertNotEqual(code, 0)
         self.assertIn("ERROR", err)
+
+
+class TestInscribe(CwdTest):
+    def test_tables_match_required_sizes(self):
+        self.assertEqual(len(xx.ITEM_TYPES), 36)
+        # 规范标题写 40，但逐行共有 41 个 key；不能为凑数漏掉表中条目。
+        self.assertEqual(len(xx.FX), 41)
+        self.assertEqual(len(xx.SKILLS), 42)
+
+    def test_inscribe_requires_outline(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        st = xx.load_state()
+        roles = [s["role"] for s in st["run"]["slots"]]
+        code, _, err = run(
+            [
+                "inscribe",
+                "--body", "矿洞深处三盏灯摇晃，像在等人选路。风里有铁锈和药味。",
+                "--c1", "走近左灯",
+                "--c2", "走近中灯",
+                "--c3", "走近右灯",
+                "--e1", _e_for(roles[0]),
+                "--e2", _e_for(roles[1]),
+                "--e3", _e_for(roles[2]),
+            ]
+        )
+        self.assertNotEqual(code, 0)
+        self.assertIn("ERROR", err)
+
+    def test_outline_too_short(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        st = xx.load_state()
+        roles = [s["role"] for s in st["run"]["slots"]]
+        code, _, err = run(
+            [
+                "inscribe",
+                "--outline", "太短了",
+                "--body", "矿洞深处三盏灯摇晃，像在等人选路。风里有铁锈和药味。",
+                "--c1", "走近左灯",
+                "--c2", "走近中灯",
+                "--c3", "走近右灯",
+                "--e1", _e_for(roles[0]),
+                "--e2", _e_for(roles[1]),
+                "--e3", _e_for(roles[2]),
+            ]
+        )
+        self.assertNotEqual(code, 0)
+        self.assertIn("ERROR", err)
+
+    def test_inscribe_ok_goes_choosing(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        code, out, err = inscribe_ok()
+        self.assertEqual(err, "")
+        self.assertEqual(code, 0)
+        self.assertIn(xx.UI_BEGIN, out)
+        st = xx.load_state()
+        self.assertEqual(st["status"], "choosing")
+        self.assertEqual(st["run"]["outline"], OUTLINE)
+        self.assertTrue(all("parsed" in choice for choice in st["run"]["choices"]))
+
+    def test_unknown_skill_rejected(self):
+        self.assertRaises(ValueError, xx.parse_effect, "skill:kind=foo:n=1:name=乱功")
+
+    def test_safe_frenzy_rejected(self):
+        parsed = xx.parse_effect("skill:kind=frenzy:n=1:name=狂刀诀")
+        self.assertRaises(ValueError, xx.validate_effect, "SAFE", parsed, "event")
+
+    def test_unknown_grant_type_or_fx(self):
+        self.assertRaises(ValueError, xx.parse_effect, "grant:type=zzz:fx=hp:n=8:name=蛇丹")
+        self.assertRaises(ValueError, xx.parse_effect, "grant:type=dan:fx=zzz:n=8:name=蛇丹")
+
+    def test_safe_bomb_grant_rejected(self):
+        parsed = xx.parse_effect("grant:type=dan:fx=bomb:n=1:name=破军丹")
+        self.assertRaises(ValueError, xx.validate_effect, "SAFE", parsed, "event")
+
+    def test_tribulation_rejects_effects_and_shows_chances(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        st = xx.load_state()
+        st["run"]["node_type"] = "tribulation"
+        st["run"]["slots"] = []
+        xx.save_state(st)
+        args = [
+            "inscribe", "--outline", OUTLINE, "--body", "劫云压城，三条生路同时显现。",
+            "--c1", "硬渡", "--c2", "护体", "--c3", "问心", "--e1", "hp+4",
+        ]
+        code, _, err = run(args)
+        self.assertNotEqual(code, 0)
+        self.assertIn("ERROR", err)
+        code, out, err = run(args[:-2])
+        self.assertEqual((code, err), (0, ""))
+        self.assertIn("成功率", out)
+        choices = xx.load_state()["run"]["choices"]
+        self.assertEqual(
+            [choice["effect"] for choice in choices],
+            ["trib:hard", "trib:guard", "trib:heart"],
+        )
 
 
 if __name__ == "__main__":
