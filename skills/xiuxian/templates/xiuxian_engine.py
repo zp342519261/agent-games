@@ -711,6 +711,158 @@ def cmd_inscribe(args: argparse.Namespace) -> None:
     emit_ui("\n".join([body, "", *effect_lines]))
 
 
+def apply_parsed(st: dict[str, Any], parsed: dict[str, Any], act: str) -> None:
+    run = st["run"]
+    run["max_hp"] += parsed["maxhp"]
+    run["hp"] = max(0, min(run["max_hp"], run["hp"] + parsed["hp"]))
+    run["atk"] += parsed["atk"]
+    run["qi"] = max(0, run["qi"] + parsed["qi"])
+
+    for key, prefix, counter, target in (
+        ("grant", "p", "next_p", "inventory"),
+        ("ally", "a", "next_a", "allies"),
+        ("skill", "s", "next_s", "skills"),
+    ):
+        reward = parsed[key]
+        if reward is None:
+            continue
+        entry = {"uid": f"{prefix}{run[counter]}", **reward}
+        run[counter] += 1
+        run[target].append(entry)
+
+    if parsed["battle"]:
+        run["did_battle"] = True
+    if run["hp"] == 0:
+        run["death_cause"] = "backlash"
+
+
+def append_chronicle(st: dict[str, Any], act: str, facts: dict[str, Any]) -> None:
+    run = st["run"]
+    run["chronicle"].append(
+        {
+            "floor": run["floor"],
+            "node": run["node_type"],
+            "realm": run["realm"],
+            "setup": run["outline"],
+            "act": act,
+            "facts": facts,
+            "after": None,
+        }
+    )
+    run["chronicle"] = run["chronicle"][-40:]
+    run["pending_log"] = True
+
+
+def advance_or_end(st: dict[str, Any]) -> None:
+    run = st["run"]
+    if run["hp"] <= 0:
+        st["status"] = "ended"
+        return
+    run["floor"] += 1
+    enter_floor(st)
+    st["status"] = "composing"
+
+
+def _skill_total(run: dict[str, Any], kind: str) -> int:
+    return sum(skill["n"] for skill in run["skills"] if skill["kind"] == kind)
+
+
+def _render_choice_result(
+    run: dict[str, Any],
+    choice: dict[str, Any],
+    gained: Optional[dict[str, Any]],
+) -> str:
+    lines = [
+        f"已选择：{choice['text']}",
+        f"结算：{fmt_effect(choice['parsed']) or '无属性变化'}",
+        f"气血：{run['hp']}/{run['max_hp']}  攻：{run['atk']}  灵气：{run['qi']}",
+    ]
+    if gained is not None:
+        lines.append(f"获得：{gained['name']}（{gained['uid']}）")
+    if run["hp"] <= 0:
+        lines.append(f"此世终结：{DEATH_LABEL[run['death_cause']]}")
+    else:
+        lines.append(f"进入第{run['floor'] + 1}层")
+    return "\n".join(lines)
+
+
+def cmd_choose(args: argparse.Namespace) -> None:
+    st = require_state()
+    if st["status"] != "choosing":
+        die("只能在 choosing 时 choose")
+    run = st["run"]
+    choice = run["choices"][args.n - 1]
+    parsed = choice["parsed"]
+    run["did_battle"] = parsed["battle"] or run["node_type"] == "event_battle"
+
+    before_counts = {
+        "inventory": len(run["inventory"]),
+        "allies": len(run["allies"]),
+        "skills": len(run["skills"]),
+    }
+    apply_parsed(st, parsed, f"choose:{args.n}")
+    gained = None
+    for target in ("inventory", "allies", "skills"):
+        if len(run[target]) > before_counts[target]:
+            gained = run[target][-1]
+            break
+
+    facts = {
+        "effect": choice["effect"],
+        "hp": run["hp"],
+        "max_hp": run["max_hp"],
+        "atk": run["atk"],
+        "qi": run["qi"],
+        "gained": gained,
+        "did_battle": run["did_battle"],
+    }
+    result_ui = _render_choice_result(run, choice, gained)
+    append_chronicle(st, f"choose:{args.n}", facts)
+
+    if run["hp"] > 0:
+        layer_exp = 5 + _skill_total(run, "insight")
+        if not run["did_battle"]:
+            layer_exp += _skill_total(run, "sage")
+        st["meta"]["exp"] += layer_exp
+    advance_or_end(st)
+    save_state(st)
+    emit_ui(result_ui)
+
+
+def _render_choosing(st: dict[str, Any]) -> str:
+    run = st["run"]
+    effect_lines = [
+        f"{i}. {choice['text']}｜{choice['role']}｜{fmt_effect(choice['parsed'])}"
+        for i, choice in enumerate(run["choices"], 1)
+    ]
+    return "\n".join([run["body"], "", *effect_lines])
+
+
+def _render_ended(st: dict[str, Any]) -> str:
+    run = st["run"]
+    cause = DEATH_LABEL.get(run["death_cause"], "未知")
+    return "\n".join(
+        [
+            "【轮回系统】此世已终",
+            f"境界：{run['realm']}  层数：{run['floor']}",
+            f"死因：{cause}",
+        ]
+    )
+
+
+def cmd_info(_: argparse.Namespace) -> None:
+    st = require_state()
+    if st["status"] == "hub":
+        body = render_hub(st)
+    elif st["status"] == "choosing":
+        body = _render_choosing(st)
+    elif st["status"] == "ended":
+        body = _render_ended(st)
+    else:
+        die("composing 时请先 draft 并完成落墨")
+    emit_ui(body)
+
+
 def build_parser() -> Parser:
     p = Parser(prog="xiuxian_engine")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -730,12 +882,14 @@ def build_parser() -> Parser:
     ins.add_argument("--e2", default=None)
     ins.add_argument("--e3", default=None)
     ins.set_defaults(func=cmd_inscribe)
+    choose = sub.add_parser("choose")
+    choose.add_argument("--n", type=int, choices=(1, 2, 3), required=True)
+    choose.set_defaults(func=cmd_choose)
+    sub.add_parser("info").set_defaults(func=cmd_info)
     for name in (
-        "choose",
         "use",
         "log",
         "recall",
-        "info",
         "giveup",
         "next",
     ):

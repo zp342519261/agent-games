@@ -52,6 +52,13 @@ def inscribe_ok(st=None):
     return run(args)
 
 
+def force_effects(e1: str, e2: str, e3: str) -> None:
+    st = xx.load_state()
+    for choice, effect in zip(st["run"]["choices"], (e1, e2, e3)):
+        choice["parsed"] = xx.parse_effect(effect)
+    xx.save_state(st)
+
+
 class CwdTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -277,6 +284,107 @@ class TestInscribe(CwdTest):
         run_state["skills"] = [{"kind": "oath", "n": 2, "name": "同心诀"}]
         run_state["allies"] = [{"bond": "dao", "n": 3, "name": "月华"}]
         self.assertEqual(xx.trib_chances(run_state), (14, 42, 5))
+
+
+class TestChooseGrant(CwdTest):
+    def _choosing(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        inscribe_ok()
+
+    def test_choose_grant_four_pills(self):
+        self._choosing()
+        force_effects(
+            "grant:type=dan:fx=hp:n=8:name=蛇丹甲",
+            "hp+4",
+            "qi+3",
+        )
+        run(["choose", "--n", "1"])
+        for name in ("蛇丹乙", "蛇丹丙", "蛇丹丁"):
+            st = xx.load_state()
+            self.assertEqual(st["status"], "composing")
+            inscribe_ok()
+            force_effects(
+                f"grant:type=dan:fx=hp:n=8:name={name}",
+                "hp+4",
+                "qi+3",
+            )
+            run(["choose", "--n", "1"])
+
+        inv = xx.load_state()["run"]["inventory"]
+        self.assertEqual(len(inv), 4)
+        self.assertEqual([item["uid"] for item in inv], ["p1", "p2", "p3", "p4"])
+        self.assertEqual(inv[0]["type"], "dan")
+        self.assertEqual(inv[0]["fx"], "hp")
+
+    def test_choose_applies_stats_allies_skills_and_exp(self):
+        self._choosing()
+        force_effects("maxhp+2;hp+4", "qi+3", "atk+1")
+        run(["choose", "--n", "1"])
+        st = xx.load_state()
+        self.assertEqual((st["run"]["max_hp"], st["run"]["hp"]), (22, 22))
+        self.assertEqual(st["meta"]["exp"], 5)
+
+        inscribe_ok()
+        force_effects(
+            "ally:bond=partner:n=1:name=青羽",
+            "hp+4",
+            "qi+3",
+        )
+        run(["choose", "--n", "1"])
+        inscribe_ok()
+        force_effects(
+            "skill:kind=insight:n=2:name=观星诀",
+            "hp+4",
+            "qi+3",
+        )
+        run(["choose", "--n", "1"])
+        st = xx.load_state()
+        self.assertEqual(st["run"]["allies"][0]["uid"], "a1")
+        self.assertEqual(st["run"]["skills"][0]["uid"], "s1")
+        self.assertEqual(st["meta"]["exp"], 17)
+
+    def test_choose_sets_pending_log_and_setup(self):
+        self._choosing()
+        force_effects("hp+4", "qi+3", "maxhp+2")
+        run(["choose", "--n", "1"])
+        st = xx.load_state()
+        self.assertTrue(st["run"]["pending_log"])
+        self.assertEqual(st["run"]["chronicle"][0]["setup"], OUTLINE)
+        self.assertEqual(st["run"]["chronicle"][0]["act"], "choose:1")
+        self.assertIsNone(st["run"]["chronicle"][0]["after"])
+
+    def test_choose_backlash_ends_run(self):
+        self._choosing()
+        force_effects("hp-20", "qi+3", "maxhp+2")
+        run(["choose", "--n", "1"])
+        st = xx.load_state()
+        self.assertEqual(st["status"], "ended")
+        self.assertEqual(st["run"]["hp"], 0)
+        self.assertEqual(st["run"]["death_cause"], "backlash")
+        self.assertEqual(st["meta"]["exp"], 0)
+
+    def test_info_supports_hub_choosing_ended_but_not_composing(self):
+        run(["init"])
+        code, out, err = run(["info"])
+        self.assertEqual((code, err), (0, ""))
+        self.assertIn("系统空间", out)
+
+        run(["start", "--seed", "1"])
+        code, _, err = run(["info"])
+        self.assertNotEqual(code, 0)
+        self.assertIn("ERROR", err)
+
+        inscribe_ok()
+        code, out, err = run(["info"])
+        self.assertEqual((code, err), (0, ""))
+        self.assertIn("矿洞深处", out)
+
+        force_effects("hp-20", "qi+3", "maxhp+2")
+        run(["choose", "--n", "1"])
+        code, out, err = run(["info"])
+        self.assertEqual((code, err), (0, ""))
+        self.assertIn("走火", out)
 
 
 if __name__ == "__main__":
