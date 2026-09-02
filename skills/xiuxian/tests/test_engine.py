@@ -342,7 +342,7 @@ class TestChooseGrant(CwdTest):
         st = xx.load_state()
         self.assertEqual(st["run"]["allies"][0]["uid"], "a1")
         self.assertEqual(st["run"]["skills"][0]["uid"], "s1")
-        self.assertEqual(st["meta"]["exp"], 17)
+        self.assertEqual(st["meta"]["exp"], 22)
 
     def test_choose_clamps_attack_and_qi_to_run_limits(self):
         self._choosing()
@@ -404,6 +404,69 @@ class TestChooseGrant(CwdTest):
 
 
 class TestFightUse(CwdTest):
+    def _fight_state(self):
+        return {
+            "meta": xx.default_meta(),
+            "run": xx.new_run(xx.default_meta(), 1),
+        }
+
+    def test_bomb_halves_opening_hp(self):
+        st = self._fight_state()
+        st["run"]["fight_mods"] = [{"fx": "bomb", "n": 1}]
+
+        report = xx.fight(st)
+
+        self.assertEqual(report["log"][0], "开战：敌 气血5 攻2")
+
+    def test_execute_triggers_at_four_times_n(self):
+        st = self._fight_state()
+        st["run"]["atk"] = 1
+        st["run"]["skills"] = [
+            {"uid": "s1", "kind": "weaken", "n": 2, "name": "破甲诀"},
+            {"uid": "s2", "kind": "execute", "n": 2, "name": "斩妖诀"},
+        ]
+
+        report = xx.fight(st)
+
+        self.assertEqual(report["log"][1], "第1轮 你造成3伤害")
+
+    def test_blood_price_adds_n_to_strike_damage(self):
+        st = self._fight_state()
+        st["run"]["atk"] = 1
+        st["run"]["skills"] = [
+            {"uid": "s1", "kind": "blood_price", "n": 2, "name": "燃血诀"}
+        ]
+
+        report = xx.fight(st)
+
+        self.assertEqual(report["log"][1], "第1轮 你造成3伤害")
+
+    def test_vigor_triggers_at_exactly_half_hp(self):
+        st = self._fight_state()
+        st["run"]["hp"] = 10
+        st["run"]["skills"] = [
+            {"uid": "s1", "kind": "vigor", "n": 2, "name": "气盛诀"}
+        ]
+
+        report = xx.fight(st)
+
+        self.assertEqual(report["log"][1], "第1轮 你造成5伤害")
+
+    def test_brother_bonus_applies_per_partner(self):
+        st = self._fight_state()
+        st["run"]["atk"] = 1
+        st["run"]["allies"] = [
+            {"uid": "a1", "bond": "partner", "n": 1, "name": "青羽"},
+            {"uid": "a2", "bond": "partner", "n": 2, "name": "玄石"},
+        ]
+        st["run"]["skills"] = [
+            {"uid": "s1", "kind": "brother", "n": 1, "name": "结义诀"}
+        ]
+
+        report = xx.fight(st)
+
+        self.assertEqual(report["log"][1], "第1轮 你造成6伤害")
+
     def test_step_zeros_first_enemy_hit(self):
         run(["init"])
         run(["start", "--seed", "1"])
@@ -449,6 +512,62 @@ class TestFightUse(CwdTest):
         st = xx.load_state()
         self.assertEqual(st["run"]["inventory"], [])
         self.assertGreaterEqual(st["run"]["hp"], 18)
+
+    def test_spark_adds_qi_and_loses_three_hp_after_ward(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        inscribe_ok()
+        st = xx.load_state()
+        st["run"]["inventory"] = [
+            {"uid": "p1", "type": "dan", "fx": "spark", "n": 6, "name": "焚心丹"}
+        ]
+        st["run"]["skills"] = [
+            {"uid": "s1", "kind": "spark_ward", "n": 1, "name": "避火诀"}
+        ]
+        st["run"]["hp"] = 10
+        st["run"]["node_type"] = "event"
+        xx.save_state(st)
+
+        code, _, _ = run(["use", "--id", "p1"])
+
+        self.assertEqual(code, 0)
+        st = xx.load_state()
+        self.assertEqual(st["run"]["qi"], 6)
+        self.assertEqual(st["run"]["hp"], 8)
+
+    def test_winning_awards_hunt_exp(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        inscribe_ok()
+        st = xx.load_state()
+        st["run"]["skills"] = [
+            {"uid": "s1", "kind": "hunt", "n": 2, "name": "猎魔诀"}
+        ]
+        st["run"]["atk"] = 50
+        xx.save_state(st)
+        force_effects("battle;atk+1;hp-3", "hp+4", "qi+3")
+
+        run(["choose", "--n", "1"])
+
+        self.assertEqual(xx.load_state()["meta"]["exp"], 12)
+
+    def test_ward_use_awards_scavenger_exp(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        inscribe_ok()
+        st = xx.load_state()
+        st["run"]["inventory"] = [
+            {"uid": "p1", "type": "fu", "fx": "ward", "n": 1, "name": "避战符"}
+        ]
+        st["run"]["skills"] = [
+            {"uid": "s1", "kind": "scavenger", "n": 3, "name": "拾荒诀"}
+        ]
+        st["run"]["node_type"] = "event"
+        xx.save_state(st)
+
+        run(["use", "--id", "p1"])
+
+        self.assertEqual(xx.load_state()["meta"]["exp"], 8)
 
 
 if __name__ == "__main__":

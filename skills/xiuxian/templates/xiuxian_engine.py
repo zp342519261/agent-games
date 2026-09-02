@@ -823,7 +823,7 @@ def fight(st: dict[str, Any]) -> dict[str, Any]:
     enemy_hp = max(1, enemy_hp - _combat_total(run, "weaken", "weaken"))
     bomb = _fight_mod_total(run, "bomb")
     if bomb:
-        enemy_hp = max(1, enemy_hp - run["atk"] * bomb)
+        enemy_hp = max(1, enemy_hp // 2)
 
     barrier = _combat_total(run, "barrier", "barrier")
     poison = _combat_total(run, "poison", "poison")
@@ -842,8 +842,12 @@ def fight(st: dict[str, Any]) -> dict[str, Any]:
         _skill_total(run, "haste")
         or _fight_mod_total(run, "second", "haste")
     )
-    partner = sum(a["n"] for a in run["allies"] if a["bond"] == "partner")
-    partner += _skill_total(run, "brother")
+    brother = _skill_total(run, "brother")
+    partner = sum(
+        ally["n"] + brother
+        for ally in run["allies"]
+        if ally["bond"] == "partner"
+    )
     dao = sum(a["n"] for a in run["allies"] if a["bond"] == "dao")
     beasts = [a["n"] for a in run["allies"] if a["bond"] == "beast"]
     iron = _fight_mod_total(run, "iron")
@@ -893,17 +897,19 @@ def fight(st: dict[str, Any]) -> dict[str, Any]:
             _trigger(triggered, run, "dawn", "dawn_fight")
         if sword:
             _trigger(triggered, run, "sword")
-        if _skill_total(run, "brother"):
+        if brother and partner:
             _trigger(triggered, run, "brother")
         if frenzy and run["hp"] * 2 <= run["max_hp"]:
             damage += frenzy
             _trigger(triggered, run, "frenzy", "frenzy_fight")
-        if vigor and run["hp"] * 2 > run["max_hp"]:
+        if vigor and run["hp"] * 2 >= run["max_hp"]:
             damage += vigor
             _trigger(triggered, run, "vigor", "vigor_fight")
-        if execute and enemy_hp * 2 <= enemy_stats(run["floor"], run["realm"])[0]:
+        if execute and enemy_hp <= 4 * execute:
             damage += execute
             _trigger(triggered, run, "execute", "execute_fight")
+        if blood_price:
+            damage += blood_price
         if with_thunder and thunder:
             damage += thunder
             _trigger(triggered, run, "thunder", "thunder_fight")
@@ -1038,6 +1044,11 @@ def _award_floor_exp(st: dict[str, Any]) -> None:
     layer_exp += _fight_mod_total(run, "insight_now")
     if not run["did_battle"]:
         layer_exp += _skill_total(run, "sage")
+    if run["won_battle"]:
+        layer_exp += 5 + _skill_total(run, "hunt")
+    used_effects = {mod["fx"] for mod in run["fight_mods"]}
+    if used_effects & {"ward", "skip", "mirror"}:
+        layer_exp += _skill_total(run, "scavenger")
     if _fight_mod_total(run, "double_exp"):
         layer_exp *= 2
     st["meta"]["exp"] += layer_exp
@@ -1122,7 +1133,8 @@ def _apply_item(st: dict[str, Any], item: dict[str, Any]) -> None:
         run["fight_mods"].append(dict(item))
     elif fx == "spark":
         ward = _skill_total(run, "spark_ward")
-        run["hp"] = max(0, run["hp"] - max(0, n - ward))
+        run["qi"] = min(qi_cap(run), run["qi"] + n)
+        run["hp"] = max(0, run["hp"] - max(0, 3 - ward))
     elif fx == "mirror":
         ward = _skill_total(run, "spark_ward")
         run["hp"] = max(0, run["hp"] - max(0, 4 - ward))
