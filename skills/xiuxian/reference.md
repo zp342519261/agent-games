@@ -47,6 +47,22 @@
 
 死物文案应让类型与效果相配，例如**丹对药、符对术**，避免出现语义别扭的组合；但这只是填词要求，**引擎不校验** type 与 fx 的搭配。
 
+## 落墨模式
+
+`inscribe --mode travel|fork` 必填：
+
+- `travel`：提交 `--outline` 与 `--body`，不带 `--c*`/`--e*`；可选一个 `--gain`，结算后直接继续。
+- `fork`：提交三项 `--c*`；普通事件还须提交三项 `--e*`，天劫不得提交 `--e*`。
+- 天劫只能用 `fork`。
+
+travel 的 `--gain` 必须恰好是以下一种：
+
+- `grant`：`fx` 仅 `{hp,qi,maxhp,ward,iron,luck_floor,exp,fullhp,barrier,meridians_now,dawn_fight,sight,rest,insight_now}`。
+- `skill`：`kind` 仅 `{breath,qi_flow,guard,meditation,meridians,sage,dawn,spark_ward}`。
+- `ally`：`bond` 可为 `partner`、`dao`、`beast`；其中 `partner` 必须 `n=1`。
+
+travel 禁止 `battle`、`accident` 与属性变化原子。连续两段 travel 不能都带 `--gain`，fork 会重置这一限制。
+
 ## 类型表（36，只影响分类文案）
 
 | type | UI |
@@ -243,6 +259,6 @@
 - 飞升通关、仙界编制、门派日常、商店合成
 - 第四战斗属性（根骨/身法当战斗轴）
 - 把伙伴/道侣/灵兽写进系统空间或 next 带走
-- 把 draft 或效果串原文当用户剧情朗读（UI 已有规范化效果行）
+- 把 draft、效果串、成功率或层号读给玩家；定夺牌面不展示规范化效果行
 - 用「天劫」描写普通层意外
 - 复用同一套三选项文案超过一层

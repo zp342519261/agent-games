@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from typing import Any, Optional
 
-ENGINE_VERSION = "1.0.0"
+ENGINE_VERSION = "1.1.0"
 UI_BEGIN = "=== XIUXIAN_UI_BEGIN ==="
 UI_END = "=== XIUXIAN_UI_END ==="
 STATE_DIR = Path(".xiuxian")
@@ -692,6 +692,7 @@ def cmd_help(_: argparse.Namespace) -> None:
             [
                 "/修仙  短局修仙肉鸽",
                 "命令：init start draft inscribe choose use log recall info giveup next help",
+                "落墨：inscribe --mode travel|fork",
                 "draft / help 无 UI 标记，不要把 draft 贴给用户。",
             ]
         )
@@ -712,9 +713,8 @@ def cmd_start(args: argparse.Namespace) -> None:
     emit_ui(
         "\n".join(
             [
-                f"【轮回系统】第{st['meta']['cycles'] + 1}世",
+                "【轮回系统】新一世启程",
                 f"境界：{st['run']['realm']}",
-                f"第{st['run']['floor']}层 · 待落墨",
             ]
         )
     )
@@ -739,6 +739,9 @@ def cmd_draft(_: argparse.Namespace) -> None:
         f"slots={json.dumps(run['slots'], ensure_ascii=False)}",
         f"chronicle_tail={json.dumps(run['chronicle'][-3:], ensure_ascii=False)}",
         f"prev_digest={st['meta']['lives'][-1]['digest'] if st['meta']['lives'] else ''}",
+        f"is_tribulation={1 if run['node_type']=='tribulation' else 0}",
+        f"travel_looted={1 if run.get('travel_looted') else 0}",
+        f"travel_gain_ok={0 if run['node_type']=='tribulation' or run.get('travel_looted') else 1}",
     ]
     if run["node_type"] == "tribulation":
         hard, guard, heart = trib_chances(run)
@@ -932,23 +935,10 @@ def append_chronicle(st: dict[str, Any], act: str, facts: dict[str, Any]) -> Non
 
 
 def mechanical_after(entry: dict[str, Any], run_snapshot: dict[str, Any]) -> str:
-    act = entry["act"]
-    if act.startswith("choose:"):
-        act_label = f"选{act.split(':', 1)[1]}"
-    elif act.startswith("use:"):
-        act_label = f"用{act.split(':', 1)[1]}"
-    elif act == "giveup":
-        act_label = "自绝"
-    else:
-        act_label = act
-
-    facts = str(entry.get("facts", ""))
-    battle = "战胜" if "战胜" in facts else "战败" if "战败" in facts else "未战"
-    destination = "身死" if run_snapshot.get("death_cause") else "下层"
-    return (
-        f"{act_label}；气血{run_snapshot['hp']}/{run_snapshot['max_hp']}；"
-        f"{battle}；{destination}"
-    )
+    act = entry.get("act") or ""
+    if str(act).startswith("travel"):
+        return "这一段游历结束"
+    return "路已选定"
 
 
 def ensure_after(st: dict[str, Any]) -> None:
@@ -1266,21 +1256,12 @@ def _apply_floor_end_passives(run: dict[str, Any]) -> None:
 
 
 def _render_choice_result(
-    run: dict[str, Any],
     choice: dict[str, Any],
-    gained: Optional[dict[str, Any]],
+    death_cause: str | None,
 ) -> str:
-    lines = [
-        f"已选择：{choice['text']}",
-        f"结算：{fmt_effect(choice['parsed']) or '无属性变化'}",
-        f"气血：{run['hp']}/{run['max_hp']}  攻：{run['atk']}  灵气：{run['qi']}",
-    ]
-    if gained is not None:
-        lines.append(f"获得：{gained['name']}（{gained['uid']}）")
-    if run["death_cause"] is not None:
-        lines.append(f"此世终结：{DEATH_LABEL[run['death_cause']]}")
-    else:
-        lines.append(f"进入第{run['floor'] + 1}层")
+    lines = [f"你选了：{choice['text']}"]
+    if death_cause:
+        lines.append(f"此世终结：{DEATH_LABEL[death_cause]}")
     return "\n".join(lines)
 
 
@@ -1310,7 +1291,7 @@ def cmd_choose(args: argparse.Namespace) -> None:
         resolve_trib(st, args.n)
         _apply_floor_end_passives(run)
         facts = _facts_text(run, choice["effect"], None, None)
-        result_ui = _render_choice_result(run, choice, None)
+        result_ui = _render_choice_result(choice, run["death_cause"])
         append_chronicle(st, f"choose:{args.n}", facts)
         _award_floor_exp(st)
         run["travel_looted"] = False
@@ -1338,7 +1319,7 @@ def cmd_choose(args: argparse.Namespace) -> None:
             break
 
     facts = _facts_text(run, choice["effect"], gained, report)
-    result_ui = _render_choice_result(run, choice, gained)
+    result_ui = _render_choice_result(choice, run["death_cause"])
     append_chronicle(st, f"choose:{args.n}", facts)
 
     _award_floor_exp(st)
@@ -1414,17 +1395,9 @@ def cmd_use(args: argparse.Namespace) -> None:
     facts = _facts_text(run, f"use:{item['uid']}:{item['name']}", None, report)
     append_chronicle(st, f"use:{item['uid']}", facts)
     _award_floor_exp(st)
-    result_ui = "\n".join(
-        [
-            f"已使用：{item['name']}（{item['uid']}）",
-            f"气血：{run['hp']}/{run['max_hp']}  攻：{run['atk']}  灵气：{run['qi']}",
-            (
-                f"此世终结：{DEATH_LABEL[run['death_cause']]}"
-                if run["hp"] <= 0
-                else f"进入第{run['floor'] + 1}层"
-            ),
-        ]
-    )
+    result_ui = f"已使用：{item['name']}"
+    if run["death_cause"]:
+        result_ui += f"\n此世终结：{DEATH_LABEL[run['death_cause']]}"
     run["travel_looted"] = False
     advance_or_end(st)
     save_state(st)
@@ -1468,7 +1441,7 @@ def _render_ended(st: dict[str, Any]) -> str:
     return "\n".join(
         [
             "【轮回系统】此世已终",
-            f"境界：{run['realm']}  层数：{run['floor']}",
+            f"境界：{run['realm']}",
             f"死因：{cause}",
             "",
             "待轮回：",
@@ -1514,9 +1487,7 @@ def _render_chronicle(
     for entry in entries[-40:]:
         lines.extend(
             [
-                f"第{entry['floor']}层 · {entry['realm']}",
                 f"起：{entry['setup'] or '无'}",
-                f"行：{entry['act']}｜{entry['facts']}",
                 f"后：{entry['after'] or '待补写'}",
             ]
         )
@@ -1567,10 +1538,7 @@ def cmd_next(_: argparse.Namespace) -> None:
     meta = st["meta"]
     cause = DEATH_LABEL.get(run["death_cause"], "未知")
     last_after = run["chronicle"][-1]["after"] if run["chronicle"] else ""
-    digest = (
-        f"第{meta['cycles'] + 1}世 · {run['realm']} · "
-        f"历{run['floor']}层 · 死于{cause}"
-    )
+    digest = f"第{meta['cycles'] + 1}世 · {run['realm']} · 死于{cause}"
     if last_after:
         digest += f" · {last_after[:20]}"
     meta["lives"].append(

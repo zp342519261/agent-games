@@ -101,7 +101,7 @@ class TestInitHelp(CwdTest):
         st = xx.load_state()
         self.assertEqual(st["status"], "hub")
         self.assertIsNone(st["run"])
-        self.assertEqual(st["engine_version"], "1.0.0")
+        self.assertEqual(st["engine_version"], "1.1.0")
         self.assertEqual(st["meta"]["cycles"], 0)
         self.assertEqual(st["meta"]["lives"], [])
 
@@ -141,6 +141,9 @@ class TestSkillDocs(unittest.TestCase):
         self.assertIn("XIUXIAN_UI_BEGIN", text)
         self.assertIn("draft", text)
         self.assertIn("--outline", text)
+        self.assertIn("--mode", text)
+        self.assertIn("travel", text)
+        self.assertIn("定夺", text)
         self.assertIn("禁止", text)
         self.assertIn("活物", text)
         self.assertNotIn("碎片店", text)
@@ -158,7 +161,7 @@ class TestSkillDocs(unittest.TestCase):
 
     def test_version_file(self):
         v = (self.root / "VERSION").read_text(encoding="utf-8").strip()
-        self.assertEqual(v, "1.0.0")
+        self.assertEqual(v, "1.1.0")
 
     def test_readme_install(self):
         text = (self.root / "README.md").read_text(encoding="utf-8")
@@ -173,6 +176,13 @@ class TestSkillDocs(unittest.TestCase):
 
 
 class TestStartDraft(CwdTest):
+    def test_start_ui_has_no_floor_word(self):
+        run(["init"])
+        code, out, err = run(["start", "--seed", "1"])
+        self.assertEqual((code, err), (0, ""))
+        self.assertIn("新一世启程", out)
+        self.assertNotIn("层", out)
+
     def test_start_seed_stable_roles(self):
         run(["init"])
         code, out, _ = run(["start", "--seed", "7"])
@@ -437,6 +447,34 @@ class TestInscribe(CwdTest):
 
 
 class TestTravel(CwdTest):
+    def test_choose_result_and_recall_hide_floor_and_rewards(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        inscribe_ok()
+        force_effects("hp+4", "qi+3", "maxhp+2")
+        code, out, err = run(["choose", "--n", "1"])
+        self.assertEqual((code, err), (0, ""))
+        self.assertIn("你选了：走近左灯", out)
+        self.assertNotIn("层", out)
+        self.assertNotIn("气血", out)
+        self.assertNotIn("SAFE", out)
+        code, out, _ = run(["recall"])
+        self.assertEqual(code, 0)
+        self.assertIn("起：", out)
+        self.assertIn("后：", out)
+        self.assertNotIn("层", out)
+        self.assertNotIn("行：", out)
+
+    def test_draft_lists_travel_gain_flags(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        code, out, err = run(["draft"])
+        self.assertEqual((code, err), (0, ""))
+        self.assertNotIn(xx.UI_BEGIN, out)
+        self.assertIn("is_tribulation=0", out)
+        self.assertIn("travel_looted=0", out)
+        self.assertIn("travel_gain_ok=1", out)
+
     def test_travel_gain_grant_then_blocks_consecutive(self):
         run(["init"])
         run(["start", "--seed", "1"])
@@ -1129,7 +1167,7 @@ class TestChronicle(CwdTest):
         self.assertFalse(st["run"]["pending_log"])
         self.assertEqual(
             st["run"]["chronicle"][0]["after"],
-            "选1；气血20/20；未战；下层",
+            "路已选定",
         )
 
     def test_illegal_inscribe_preserves_pending_log_state(self):
@@ -1195,7 +1233,7 @@ class TestChronicle(CwdTest):
         self.assertEqual(len(st["run"]["chronicle"]), 2)
         self.assertEqual(
             st["run"]["chronicle"][0]["after"],
-            "选1；气血20/20；未战；下层",
+            "路已选定",
         )
         self.assertEqual(st["run"]["chronicle"][1]["act"], "giveup")
 

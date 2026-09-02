@@ -2,7 +2,7 @@
 
 Agent 当主持、你当散修。没有固定剧本；每世现编奇遇，引擎锁定数值与骰子。适用于 Cursor 等 Agent。
 
-当前版本：**1.0.0**（见 [VERSION](VERSION) · [CHANGELOG](CHANGELOG.md)）
+当前版本：**1.1.0**（见 [VERSION](VERSION) · [CHANGELOG](CHANGELOG.md)）
 
 ## 安装
 
@@ -19,7 +19,7 @@ npx skills add zp342519261/agent-games -g -a cursor -s xiuxian -y
 /修仙 init
 ```
 
-先进入【系统空间】，确认「开始」后才 `start` 入世。选 1/2/3 推进奇遇；用药 `use`；自绝 `giveup`；身死后 `next` 回系统空间。
+先进入【系统空间】，确认「开始」后才 `start` 入世。多数片段直接游历推进；遇到破境、生死、立事等关键情况，再选 1/2/3 定夺。用药 `use`；自绝 `giveup`；身死后 `next` 回系统空间。
 
 从本仓库开发时，在**用户项目**（或仓库根）拷运行态：
 
