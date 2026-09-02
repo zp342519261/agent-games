@@ -8,6 +8,7 @@
 |-------|------|----------|
 | [nlhe](skills/nlhe/) | 6-max 德州扑克 GTO 教学桌 | `/NLHE` |
 | [soup](skills/soup/) | 海龟汤（Agent 当汤主，现编现猜） | `/海龟汤` |
+| [xiuxian](skills/xiuxian/) | 修仙肉鸽（轮回系统） | `/修仙` |
 
 ## 安装（Cursor）
 
@@ -21,6 +22,12 @@ npx skills add zp342519261/agent-games -g -a cursor -s nlhe -y
 
 ```bash
 npx skills add zp342519261/agent-games -g -a cursor -s soup -y
+```
+
+只装修仙：
+
+```bash
+npx skills add zp342519261/agent-games -g -a cursor -s xiuxian -y
 ```
 
 - `-g`：装到 `~/.cursor/skills/<skill名>`（全局）
@@ -39,7 +46,8 @@ agent-games/
 ├── LICENSE
 └── skills/
     ├── nlhe/          # 德州扑克 GTO 教学桌
-    └── soup/          # 海龟汤（Agent 当汤主，现编现猜）
+    ├── soup/          # 海龟汤（Agent 当汤主，现编现猜）
+    └── xiuxian/       # 修仙肉鸽（轮回系统）
 ```
 
 以后加游戏：在 `skills/` 下新建目录，内含自己的 `SKILL.md`。

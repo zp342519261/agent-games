@@ -140,6 +140,21 @@ class TestSkillDocs(unittest.TestCase):
         self.assertIn("丹对药、符对术", text)
         self.assertIn("引擎不校验", text)
 
+    def test_version_file(self):
+        v = (self.root / "VERSION").read_text(encoding="utf-8").strip()
+        self.assertEqual(v, "1.0.0")
+
+    def test_readme_install(self):
+        text = (self.root / "README.md").read_text(encoding="utf-8")
+        self.assertIn("-s xiuxian", text)
+        self.assertIn("/修仙", text)
+
+    def test_root_readme_lists_xiuxian(self):
+        root = Path(__file__).resolve().parents[3] / "README.md"
+        text = root.read_text(encoding="utf-8")
+        self.assertIn("xiuxian", text)
+        self.assertIn("/修仙", text)
+
 
 class TestStartDraft(CwdTest):
     def test_start_seed_stable_roles(self):
