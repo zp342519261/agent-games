@@ -284,6 +284,30 @@ class TestInscribe(CwdTest):
         self.assertNotIn("%", out)
         self.assertEqual(xx.load_state()["status"], "choosing")
 
+    def test_fork_rejects_empty_gain(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        st = xx.load_state()
+        roles = [s["role"] for s in st["run"]["slots"]]
+        code, _, err = run(
+            [
+                "inscribe",
+                "--mode", "fork",
+                "--gain", "",
+                "--outline", OUTLINE,
+                "--body", "矿洞深处三盏灯摇晃，像在等人选路。风里有铁锈和药味。",
+                "--c1", "走近左灯",
+                "--c2", "走近中灯",
+                "--c3", "走近右灯",
+                "--e1", _e_for(roles[0]),
+                "--e2", _e_for(roles[1]),
+                "--e3", _e_for(roles[2]),
+            ]
+        )
+        self.assertNotEqual(code, 0)
+        self.assertIn("ERROR", err)
+        self.assertEqual(xx.load_state()["status"], "composing")
+
     def test_outline_too_short(self):
         run(["init"])
         run(["start", "--seed", "1"])

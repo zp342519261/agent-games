@@ -738,7 +738,7 @@ def cmd_inscribe(args: argparse.Namespace) -> None:
         body = validate_body(args.body)
         if args.mode == "travel":
             raise ValueError("游历模式尚未接线")
-        if args.gain:
+        if args.gain is not None:
             raise ValueError("定夺不能带 --gain")
         option_texts = [args.c1.strip(), args.c2.strip(), args.c3.strip()]
         if not all(option_texts):
