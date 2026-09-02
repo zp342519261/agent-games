@@ -570,5 +570,125 @@ class TestFightUse(CwdTest):
         self.assertEqual(xx.load_state()["meta"]["exp"], 8)
 
 
+class TestDeaths(CwdTest):
+    def test_accident_p100_kills_with_hp(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        inscribe_ok()
+        force_effects("qi+1;accident:p=40", "hp+4", "qi+3")
+        st = xx.load_state()
+        st["run"]["choices"][0]["parsed"]["accident"] = 100
+        xx.save_state(st)
+
+        run(["choose", "--n", "1"])
+
+        st = xx.load_state()
+        self.assertEqual(st["status"], "ended")
+        self.assertEqual(st["run"]["death_cause"], "accident")
+        self.assertGreater(st["run"]["hp"], 0)
+
+    def test_luck_cancels_low_p(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        inscribe_ok()
+        st = xx.load_state()
+        st["run"]["skills"] = [
+            {"uid": "s1", "kind": "luck", "n": 15, "name": "气运"}
+        ]
+        xx.save_state(st)
+        force_effects("qi+1;accident:p=10", "hp+4", "qi+3")
+
+        run(["choose", "--n", "1"])
+
+        st = xx.load_state()
+        self.assertNotEqual(st["run"].get("death_cause"), "accident")
+        self.assertNotEqual(st["status"], "ended")
+
+    def test_danger_saves_first_accident(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        inscribe_ok()
+        st = xx.load_state()
+        st["run"]["skills"] = [
+            {"uid": "s1", "kind": "danger", "n": 1, "name": "危机感知"}
+        ]
+        xx.save_state(st)
+        force_effects("qi+1;accident:p=40", "hp+4", "qi+3")
+        st = xx.load_state()
+        st["run"]["choices"][0]["parsed"]["accident"] = 100
+        xx.save_state(st)
+
+        run(["choose", "--n", "1"])
+
+        st = xx.load_state()
+        self.assertNotEqual(st["status"], "ended")
+        self.assertTrue(st["run"]["danger_used"])
+
+    def test_spark_kills_backlash(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        inscribe_ok()
+        st = xx.load_state()
+        st["run"]["inventory"] = [
+            {"uid": "p1", "type": "dan", "fx": "spark", "n": 2, "name": "躁丹"}
+        ]
+        st["run"]["hp"] = 2
+        xx.save_state(st)
+
+        run(["use", "--id", "p1"])
+
+        st = xx.load_state()
+        self.assertEqual(st["status"], "ended")
+        self.assertEqual(st["run"]["death_cause"], "backlash")
+
+    def test_giveup(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+
+        code, out, _ = run(["giveup"])
+
+        self.assertEqual(code, 0)
+        st = xx.load_state()
+        self.assertEqual(st["status"], "ended")
+        self.assertEqual(st["run"]["death_cause"], "given_up")
+        self.assertIn("自绝", out)
+        self.assertEqual(st["run"]["chronicle"][-1]["act"], "giveup")
+
+    def test_revive_does_not_save_accident(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        inscribe_ok()
+        st = xx.load_state()
+        st["run"]["inventory"] = [
+            {"uid": "p1", "type": "dan", "fx": "revive", "n": 1, "name": "续命丹"}
+        ]
+        xx.save_state(st)
+        force_effects("qi+1;accident:p=40", "hp+4", "qi+3")
+        st = xx.load_state()
+        st["run"]["choices"][0]["parsed"]["accident"] = 100
+        xx.save_state(st)
+
+        run(["choose", "--n", "1"])
+
+        st = xx.load_state()
+        self.assertEqual(st["run"]["death_cause"], "accident")
+        self.assertFalse(st["run"]["revive_used"])
+        self.assertEqual(len(st["run"]["inventory"]), 1)
+
+    def test_lethal_attribute_loss_prevents_accident_roll(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        inscribe_ok()
+        force_effects("hp-20;accident:p=40", "hp+4", "qi+3")
+        st = xx.load_state()
+        st["run"]["choices"][0]["parsed"]["accident"] = 100
+        xx.save_state(st)
+
+        run(["choose", "--n", "1"])
+
+        st = xx.load_state()
+        self.assertEqual(st["run"]["death_cause"], "backlash")
+
+
 if __name__ == "__main__":
     unittest.main()

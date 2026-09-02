@@ -742,6 +742,24 @@ def apply_parsed(st: dict[str, Any], parsed: dict[str, Any], act: str) -> None:
         run["death_cause"] = "backlash"
 
 
+def resolve_accident(run: dict[str, Any], probability: int) -> bool:
+    if probability <= 0:
+        return False
+    luck = _skill_total(run, "luck") + run["luck_floor"]
+    has_sight = any(mod["fx"] == "sight" for mod in run["fight_mods"])
+    effective_probability = 0 if has_sight else max(0, probability - luck)
+    roll = random.Random(
+        run["seed"] + 80000 + run["floor"]
+    ).randint(1, 100)
+    if roll > effective_probability:
+        return False
+    if _skill_total(run, "danger") and not run["danger_used"]:
+        run["danger_used"] = True
+        return False
+    run["death_cause"] = "accident"
+    return True
+
+
 def append_chronicle(st: dict[str, Any], act: str, facts: dict[str, Any]) -> None:
     run = st["run"]
     run["chronicle"].append(
@@ -761,7 +779,7 @@ def append_chronicle(st: dict[str, Any], act: str, facts: dict[str, Any]) -> Non
 
 def advance_or_end(st: dict[str, Any]) -> None:
     run = st["run"]
-    if run["hp"] <= 0:
+    if run["death_cause"] is not None:
         st["status"] = "ended"
         return
     run["floor"] += 1
@@ -1038,7 +1056,7 @@ def _facts_text(
 
 def _award_floor_exp(st: dict[str, Any]) -> None:
     run = st["run"]
-    if run["hp"] <= 0:
+    if run["death_cause"] is not None:
         return
     layer_exp = 5 + _skill_total(run, "insight")
     layer_exp += _fight_mod_total(run, "insight_now")
@@ -1066,7 +1084,7 @@ def _render_choice_result(
     ]
     if gained is not None:
         lines.append(f"获得：{gained['name']}（{gained['uid']}）")
-    if run["hp"] <= 0:
+    if run["death_cause"] is not None:
         lines.append(f"此世终结：{DEATH_LABEL[run['death_cause']]}")
     else:
         lines.append(f"进入第{run['floor'] + 1}层")
@@ -1086,7 +1104,9 @@ def cmd_choose(args: argparse.Namespace) -> None:
         "skills": len(run["skills"]),
     }
     apply_parsed(st, parsed, f"choose:{args.n}")
-    report = fight(st) if run["hp"] > 0 and should_fight(
+    if run["death_cause"] is None:
+        resolve_accident(run, parsed["accident"])
+    report = fight(st) if run["death_cause"] is None and should_fight(
         run["node_type"], parsed, run["fight_mods"]
     ) else None
     gained = None
@@ -1220,6 +1240,18 @@ def cmd_info(_: argparse.Namespace) -> None:
     emit_ui(body)
 
 
+def cmd_giveup(_: argparse.Namespace) -> None:
+    st = require_state()
+    if st["status"] not in {"composing", "choosing"}:
+        die("只能在 composing 或 choosing 时 giveup")
+    run = st["run"]
+    run["death_cause"] = "given_up"
+    append_chronicle(st, "giveup", "自绝")
+    st["status"] = "ended"
+    save_state(st)
+    emit_ui(_render_ended(st))
+
+
 def build_parser() -> Parser:
     p = Parser(prog="xiuxian_engine")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -1246,10 +1278,10 @@ def build_parser() -> Parser:
     use.add_argument("--id", required=True)
     use.set_defaults(func=cmd_use)
     sub.add_parser("info").set_defaults(func=cmd_info)
+    sub.add_parser("giveup").set_defaults(func=cmd_giveup)
     for name in (
         "log",
         "recall",
-        "giveup",
         "next",
     ):
         sub.add_parser(name).set_defaults(func=cmd_stub)
