@@ -521,13 +521,19 @@ def new_run(meta: dict[str, Any], seed: int) -> dict[str, Any]:
     }
 
 
+def qi_cap(run: dict[str, Any]) -> int:
+    meridians = sum(
+        skill["n"] for skill in run["skills"] if skill["kind"] == "meridians"
+    )
+    return 99 + meridians + run["qi_bonus"]
+
+
 def apply_enter_passives(run: dict[str, Any]) -> None:
     for sk in run["skills"]:
         if sk["kind"] == "breath":
             run["hp"] = min(run["max_hp"], run["hp"] + sk["n"])
         elif sk["kind"] == "qi_flow":
-            cap = 99 + sum(s["n"] for s in run["skills"] if s["kind"] == "meridians") + run["qi_bonus"]
-            run["qi"] = min(cap, run["qi"] + sk["n"])
+            run["qi"] = min(qi_cap(run), run["qi"] + sk["n"])
 
 
 def enter_floor(st: dict[str, Any]) -> None:
@@ -715,8 +721,8 @@ def apply_parsed(st: dict[str, Any], parsed: dict[str, Any], act: str) -> None:
     run = st["run"]
     run["max_hp"] += parsed["maxhp"]
     run["hp"] = max(0, min(run["max_hp"], run["hp"] + parsed["hp"]))
-    run["atk"] += parsed["atk"]
-    run["qi"] = max(0, run["qi"] + parsed["qi"])
+    run["atk"] = max(1, run["atk"] + parsed["atk"])
+    run["qi"] = max(0, min(qi_cap(run), run["qi"] + parsed["qi"]))
 
     for key, prefix, counter, target in (
         ("grant", "p", "next_p", "inventory"),

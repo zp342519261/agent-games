@@ -344,6 +344,22 @@ class TestChooseGrant(CwdTest):
         self.assertEqual(st["run"]["skills"][0]["uid"], "s1")
         self.assertEqual(st["meta"]["exp"], 17)
 
+    def test_choose_clamps_attack_and_qi_to_run_limits(self):
+        self._choosing()
+        st = xx.load_state()
+        st["run"]["skills"] = [
+            {"uid": "s1", "kind": "meridians", "n": 10, "name": "通脉诀"}
+        ]
+        st["run"]["qi_bonus"] = 4
+        xx.save_state(st)
+        force_effects("atk-99;qi+999", "hp+4", "maxhp+2")
+
+        run(["choose", "--n", "1"])
+
+        st = xx.load_state()
+        self.assertEqual(st["run"]["atk"], 1)
+        self.assertEqual(st["run"]["qi"], 113)
+
     def test_choose_sets_pending_log_and_setup(self):
         self._choosing()
         force_effects("hp+4", "qi+3", "maxhp+2")
