@@ -45,6 +45,8 @@
 
 `accident` 骰：`random.Random(seed + 80000 + floor).randint(1, 100)`。中了则 `ended`，`death_cause=accident`，本层 grant/ally/skill 仍先结算再判定（已进包的死物能轮回带走）。
 
+死物文案应让类型与效果相配，例如**丹对药、符对术**，避免出现语义别扭的组合；但这只是填词要求，**引擎不校验** type 与 fx 的搭配。
+
 ## 类型表（36，只影响分类文案）
 
 | type | UI |

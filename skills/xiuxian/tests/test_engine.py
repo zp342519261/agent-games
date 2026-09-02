@@ -137,6 +137,8 @@ class TestSkillDocs(unittest.TestCase):
         self.assertIn("`breath`", text)
         self.assertIn("`vessel`", text)
         self.assertIn("黑名单", text)
+        self.assertIn("丹对药、符对术", text)
+        self.assertIn("引擎不校验", text)
 
 
 class TestStartDraft(CwdTest):
