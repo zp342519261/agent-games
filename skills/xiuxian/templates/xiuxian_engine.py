@@ -770,7 +770,7 @@ def cmd_inscribe(args: argparse.Namespace) -> None:
             if any(effect is not None for effect in (args.e1, args.e2, args.e3)):
                 raise ValueError("游历不能带 --e*")
             parsed = None
-            if args.gain:
+            if args.gain is not None:
                 if run.get("travel_looted"):
                     raise ValueError("连续游历不能都给东西")
                 parsed = parse_effect(args.gain.strip())

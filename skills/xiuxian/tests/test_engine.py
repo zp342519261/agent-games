@@ -488,6 +488,23 @@ class TestTravel(CwdTest):
         self.assertIn("ERROR", err)
         self.assertEqual(xx.load_state(), before)
 
+    def test_travel_rejects_explicit_empty_gain_without_changing_state(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        before = xx.load_state()
+        code, _, err = run(
+            [
+                "inscribe",
+                "--mode", "travel",
+                "--outline", OUTLINE,
+                "--body", BODY,
+                "--gain", "",
+            ]
+        )
+        self.assertNotEqual(code, 0)
+        self.assertIn("ERROR", err)
+        self.assertEqual(xx.load_state(), before)
+
     def test_travel_without_gain_skips_choosing(self):
         run(["init"])
         run(["start", "--seed", "1"])
