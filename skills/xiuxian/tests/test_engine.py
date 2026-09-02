@@ -881,6 +881,22 @@ class TestRebirth(CwdTest):
         run(["start", "--seed", "2"])
         self.assertEqual(xx.load_state()["run"]["allies"], [])
 
+    def test_start_continues_uids_after_kept_items_and_skills(self):
+        self._dead(
+            inventory=[
+                {"uid": "p5", "type": "dan", "fx": "hp", "n": 4, "name": "青丹"}
+            ],
+            skills=[{"uid": "s8", "kind": "sword", "n": 1, "name": "剑诀"}],
+        )
+        run(["next"])
+
+        run(["start", "--seed", "2"])
+
+        new_run = xx.load_state()["run"]
+        self.assertEqual(new_run["next_p"], 6)
+        self.assertEqual(new_run["next_s"], 9)
+        self.assertEqual(new_run["next_a"], 1)
+
     def test_next_rejects_non_ended_state(self):
         run(["init"])
 

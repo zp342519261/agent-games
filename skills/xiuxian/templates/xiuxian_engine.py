@@ -535,6 +535,10 @@ def roll_slots(seed: int, floor: int) -> list[dict[str, str]]:
     return [{"role": r} for r in roles]
 
 
+def _next_uid(entries: list[dict[str, Any]]) -> int:
+    return max((int(entry["uid"][1:]) for entry in entries), default=0) + 1
+
+
 def new_run(meta: dict[str, Any], seed: int) -> dict[str, Any]:
     return {
         "seed": seed,
@@ -562,8 +566,8 @@ def new_run(meta: dict[str, Any], seed: int) -> dict[str, Any]:
         "chronicle": [],
         "pending_log": False,
         "death_cause": None,
-        "next_p": 1,
-        "next_s": 1,
+        "next_p": _next_uid(meta["inventory"]),
+        "next_s": _next_uid(meta["skills"]),
         "next_a": 1,
         "last_fight": None,
         "scavenged": False,
