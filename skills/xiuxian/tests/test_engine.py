@@ -16,6 +16,7 @@ import xiuxian_engine as xx
 OUTLINE = "青州郊外废弃矿洞深处传来低语，洞口摆着三盏来历不明的灯。"
 TRIB_BODY = "天劫云压顶，三道雷纹在识海里转。系统冷冰冰列出三条渡法。"
 BODY = "矿洞深处三盏灯摇晃，像在等人选路。风里有铁锈和药味。"
+GAIN_SAFE = "grant:type=dan:fx=hp:n=8:name=蛇丹"
 
 
 def run(argv: list[str]) -> tuple[int, str, str]:
@@ -436,6 +437,57 @@ class TestInscribe(CwdTest):
 
 
 class TestTravel(CwdTest):
+    def test_travel_gain_grant_then_blocks_consecutive(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        code, out, err = travel_ok(GAIN_SAFE)
+        self.assertEqual((code, err), (0, ""))
+        self.assertIn(BODY, out)
+        st = xx.load_state()
+        self.assertEqual(len(st["run"]["inventory"]), 1)
+        self.assertEqual(st["run"]["inventory"][0]["name"], "蛇丹")
+        self.assertTrue(st["run"]["travel_looted"])
+        self.assertEqual(st["run"]["chronicle"][0]["act"], "travel+gain")
+        before = xx.load_state()
+        code, _, err = travel_ok(GAIN_SAFE)
+        self.assertNotEqual(code, 0)
+        self.assertIn("ERROR", err)
+        self.assertEqual(xx.load_state(), before)
+
+    def test_empty_travel_then_gain_allowed(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        travel_ok(GAIN_SAFE)
+        travel_ok()
+        code, _, err = travel_ok("ally:bond=partner:n=1:name=阿青")
+        self.assertEqual((code, err), (0, ""))
+        st = xx.load_state()
+        self.assertEqual(st["run"]["allies"][-1]["name"], "阿青")
+
+    def test_fork_breaks_travel_loot_streak(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        travel_ok(GAIN_SAFE)
+        inscribe_ok()
+        force_effects("hp+4", "qi+3", "maxhp+2")
+        run(["choose", "--n", "1"])
+        code, _, err = travel_ok(GAIN_SAFE)
+        self.assertEqual((code, err), (0, ""))
+        self.assertEqual(len(xx.load_state()["run"]["inventory"]), 2)
+
+    def test_travel_gain_rejects_battle_and_greedy_skill(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        before = xx.load_state()
+        code, _, err = travel_ok("battle")
+        self.assertNotEqual(code, 0)
+        self.assertIn("ERROR", err)
+        self.assertEqual(xx.load_state(), before)
+        code, _, err = travel_ok("skill:kind=sword:n=1:name=剑诀")
+        self.assertNotEqual(code, 0)
+        self.assertIn("ERROR", err)
+        self.assertEqual(xx.load_state(), before)
+
     def test_travel_without_gain_skips_choosing(self):
         run(["init"])
         run(["start", "--seed", "1"])

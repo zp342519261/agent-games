@@ -423,6 +423,31 @@ GREEDY_SKILLS = {
 }
 
 
+def validate_travel_gain(parsed: dict[str, Any]) -> None:
+    if (
+        parsed["battle"]
+        or parsed["accident"]
+        or parsed["hp"]
+        or parsed["atk"]
+        or parsed["qi"]
+        or parsed["maxhp"]
+    ):
+        raise ValueError("游历收获只能是 grant/ally/skill")
+    grant, ally, skill = parsed["grant"], parsed["ally"], parsed["skill"]
+    kinds = [item for item in (grant, ally, skill) if item is not None]
+    if len(kinds) != 1:
+        raise ValueError("游历收获必须恰好一种")
+    if grant and grant["fx"] not in SAFE_GRANT_FX:
+        raise ValueError("游历道具效果不合法")
+    if skill and skill["kind"] not in SAFE_SKILLS:
+        raise ValueError("游历功法不合法")
+    if ally:
+        if ally["bond"] not in {"partner", "dao", "beast"}:
+            raise ValueError("游历同行不合法")
+        if ally["bond"] == "partner" and ally["n"] != 1:
+            raise ValueError("游历伙伴 n 须为 1")
+
+
 def validate_effect(role: str, parsed: dict[str, Any], node_type: str) -> None:
     if role not in ROLES:
         raise ValueError("未知选项角色")
@@ -744,15 +769,19 @@ def cmd_inscribe(args: argparse.Namespace) -> None:
                 raise ValueError("游历不能带 --c*")
             if any(effect is not None for effect in (args.e1, args.e2, args.e3)):
                 raise ValueError("游历不能带 --e*")
-            if args.gain is not None:
-                raise ValueError("游历收获尚未接线")
-        if args.gain is not None:
+            parsed = None
+            if args.gain:
+                if run.get("travel_looted"):
+                    raise ValueError("连续游历不能都给东西")
+                parsed = parse_effect(args.gain.strip())
+                validate_travel_gain(parsed)
+        elif args.gain is not None:
             raise ValueError("定夺不能带 --gain")
         if args.mode == "travel":
             ensure_after(st)
             run["outline"] = outline
             run["body"] = body
-            settle_travel(st, None)
+            settle_travel(st, parsed)
             save_state(st)
             emit_ui(body)
             return
@@ -1284,6 +1313,7 @@ def cmd_choose(args: argparse.Namespace) -> None:
         result_ui = _render_choice_result(run, choice, None)
         append_chronicle(st, f"choose:{args.n}", facts)
         _award_floor_exp(st)
+        run["travel_looted"] = False
         advance_or_end(st)
         save_state(st)
         emit_ui(result_ui)
@@ -1312,6 +1342,7 @@ def cmd_choose(args: argparse.Namespace) -> None:
     append_chronicle(st, f"choose:{args.n}", facts)
 
     _award_floor_exp(st)
+    run["travel_looted"] = False
     advance_or_end(st)
     save_state(st)
     emit_ui(result_ui)
@@ -1394,6 +1425,7 @@ def cmd_use(args: argparse.Namespace) -> None:
             ),
         ]
     )
+    run["travel_looted"] = False
     advance_or_end(st)
     save_state(st)
     emit_ui(result_ui)
