@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
 import sys
 from pathlib import Path
 from typing import Any, Optional
@@ -92,6 +93,100 @@ def slot_cap_from(cycles: int, pouch_n: int) -> int:
     return min(10, 4 + cycles + pouch_n)
 
 
+def realm_index(realm: str) -> int:
+    return REALMS.index(realm)
+
+
+def next_realm(realm: str) -> Optional[str]:
+    i = realm_index(realm)
+    if i >= len(REALMS) - 1:
+        return None
+    return REALMS[i + 1]
+
+
+def need_tribulation(meta: dict[str, Any], run_realm: str) -> bool:
+    nxt = next_realm(run_realm)
+    if nxt is None:
+        return False
+    return meta["exp"] >= THRESHOLDS[realm_index(nxt)]
+
+
+def roll_slots(seed: int, floor: int) -> list[dict[str, str]]:
+    roles = list(ROLES)
+    random.Random(seed + floor).shuffle(roles)
+    return [{"role": r} for r in roles]
+
+
+def new_run(meta: dict[str, Any], seed: int) -> dict[str, Any]:
+    return {
+        "seed": seed,
+        "floor": 1,
+        "realm": meta["realm"],
+        "hp": meta["max_hp"],
+        "max_hp": meta["max_hp"],
+        "atk": meta["atk"],
+        "qi": meta["qi"],
+        "inventory": [dict(x) for x in meta["inventory"]],
+        "skills": [dict(x) for x in meta["skills"]],
+        "allies": [],
+        "trib_run": 0,
+        "fight_mods": [],
+        "qi_bonus": 0,
+        "dawn": 0,
+        "luck_floor": 0,
+        "danger_used": False,
+        "revive_used": False,
+        "node_type": "event",
+        "slots": [],
+        "choices": None,
+        "body": None,
+        "outline": None,
+        "chronicle": [],
+        "pending_log": False,
+        "death_cause": None,
+        "next_p": 1,
+        "next_s": 1,
+        "next_a": 1,
+        "last_fight": None,
+        "scavenged": False,
+        "did_battle": False,
+        "won_battle": False,
+    }
+
+
+def apply_enter_passives(run: dict[str, Any]) -> None:
+    for sk in run["skills"]:
+        if sk["kind"] == "breath":
+            run["hp"] = min(run["max_hp"], run["hp"] + sk["n"])
+        elif sk["kind"] == "qi_flow":
+            cap = 99 + sum(s["n"] for s in run["skills"] if s["kind"] == "meridians") + run["qi_bonus"]
+            run["qi"] = min(cap, run["qi"] + sk["n"])
+
+
+def enter_floor(st: dict[str, Any]) -> None:
+    run = st["run"]
+    run["dawn"] = 0
+    run["luck_floor"] = 0
+    run["fight_mods"] = []
+    run["scavenged"] = False
+    run["did_battle"] = False
+    run["won_battle"] = False
+    run["last_fight"] = None
+    run["choices"] = None
+    run["body"] = None
+    run["outline"] = None
+    apply_enter_passives(run)
+    if need_tribulation(st["meta"], run["realm"]):
+        run["node_type"] = "tribulation"
+        run["slots"] = []
+    elif run["floor"] % 2 == 1:
+        run["node_type"] = "event"
+        run["slots"] = roll_slots(run["seed"], run["floor"])
+    else:
+        run["node_type"] = "event_battle"
+        run["slots"] = roll_slots(run["seed"], run["floor"])
+
+
 def render_hub(st: dict[str, Any], notice: str = "") -> str:
     m = st["meta"]
     pouch = sum(s["n"] for s in m["skills"] if s["kind"] == "pouch")
@@ -144,14 +239,59 @@ def cmd_stub(_: argparse.Namespace) -> None:
     die("未实现")
 
 
+def cmd_start(args: argparse.Namespace) -> None:
+    st = require_state()
+    if st["status"] != "hub":
+        die("只能在系统空间 start（ended 须先 next）")
+    seed = args.seed
+    if seed is None:
+        seed = int.from_bytes(os.urandom(4), "big")
+    st["run"] = new_run(st["meta"], int(seed))
+    enter_floor(st)
+    st["status"] = "composing"
+    save_state(st)
+    emit_ui(
+        "\n".join(
+            [
+                f"【轮回系统】第{st['meta']['cycles'] + 1}世",
+                f"境界：{st['run']['realm']}",
+                f"第{st['run']['floor']}层 · 待落墨",
+            ]
+        )
+    )
+
+
+def cmd_draft(_: argparse.Namespace) -> None:
+    st = require_state()
+    if st["status"] != "composing":
+        die("只能在 composing 时 draft")
+    run = st["run"]
+    lines = [
+        f"floor={run['floor']}",
+        f"node_type={run['node_type']}",
+        f"realm={run['realm']}",
+        f"hp={run['hp']}/{run['max_hp']} atk={run['atk']} qi={run['qi']}",
+        f"exp={st['meta']['exp']}",
+        f"inventory={json.dumps(run['inventory'], ensure_ascii=False)}",
+        f"skills={json.dumps(run['skills'], ensure_ascii=False)}",
+        f"allies={json.dumps(run['allies'], ensure_ascii=False)}",
+        f"slots={json.dumps(run['slots'], ensure_ascii=False)}",
+        f"chronicle_tail={json.dumps(run['chronicle'][-3:], ensure_ascii=False)}",
+        f"prev_digest={st['meta']['lives'][-1]['digest'] if st['meta']['lives'] else ''}",
+    ]
+    print("\n".join(lines))
+
+
 def build_parser() -> Parser:
     p = Parser(prog="xiuxian_engine")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("init").set_defaults(func=cmd_init)
     sub.add_parser("help").set_defaults(func=cmd_help)
+    sp = sub.add_parser("start")
+    sp.add_argument("--seed", type=int, default=None)
+    sp.set_defaults(func=cmd_start)
+    sub.add_parser("draft").set_defaults(func=cmd_draft)
     for name in (
-        "start",
-        "draft",
         "inscribe",
         "choose",
         "use",

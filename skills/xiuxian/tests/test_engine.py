@@ -81,5 +81,66 @@ class TestInitHelp(CwdTest):
         self.assertIn("ERROR", err)
 
 
+class TestStartDraft(CwdTest):
+    def test_start_seed_stable_roles(self):
+        run(["init"])
+        code, out, _ = run(["start", "--seed", "7"])
+        self.assertEqual(code, 0)
+        self.assertIn(xx.UI_BEGIN, out)
+        st = xx.load_state()
+        self.assertEqual(st["status"], "composing")
+        self.assertEqual(st["run"]["seed"], 7)
+        self.assertEqual(st["run"]["floor"], 1)
+        self.assertEqual(st["run"]["node_type"], "event")
+        roles_a = [s["role"] for s in st["run"]["slots"]]
+        self.assertEqual(sorted(roles_a), ["GREEDY", "SAFE", "WEIRD"])
+        st["status"] = "hub"
+        st["run"] = None
+        xx.save_state(st)
+        run(["start", "--seed", "7"])
+        st2 = xx.load_state()
+        roles_b = [s["role"] for s in st2["run"]["slots"]]
+        self.assertEqual(roles_a, roles_b)
+
+    def test_init_during_run_errors(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        code, _, err = run(["init"])
+        self.assertNotEqual(code, 0)
+        self.assertIn("ERROR", err)
+        self.assertEqual(xx.load_state()["status"], "composing")
+
+    def test_draft_has_no_ui_marker(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        code, out, _ = run(["draft"])
+        self.assertEqual(code, 0)
+        self.assertNotIn(xx.UI_BEGIN, out)
+        self.assertIn("node_type", out)
+        self.assertIn("SAFE", out)
+        self.assertIn("GREEDY", out)
+        self.assertIn("WEIRD", out)
+
+    def test_odd_even_node_types(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        st = xx.load_state()
+        self.assertEqual(st["run"]["node_type"], "event")
+        st["run"]["floor"] = 2
+        xx.enter_floor(st)
+        self.assertEqual(st["run"]["node_type"], "event_battle")
+
+    def test_start_not_from_ended(self):
+        run(["init"])
+        st = xx.load_state()
+        st["status"] = "ended"
+        st["run"] = xx.new_run(st["meta"], 1)
+        st["run"]["death_cause"] = "combat"
+        xx.save_state(st)
+        code, _, err = run(["start"])
+        self.assertNotEqual(code, 0)
+        self.assertIn("ERROR", err)
+
+
 if __name__ == "__main__":
     unittest.main()
