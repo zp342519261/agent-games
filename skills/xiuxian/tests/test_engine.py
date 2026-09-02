@@ -15,6 +15,7 @@ import xiuxian_engine as xx
 
 OUTLINE = "青州郊外废弃矿洞深处传来低语，洞口摆着三盏来历不明的灯。"
 TRIB_BODY = "天劫云压顶，三道雷纹在识海里转。系统冷冰冰列出三条渡法。"
+BODY = "矿洞深处三盏灯摇晃，像在等人选路。风里有铁锈和药味。"
 
 
 def run(argv: list[str]) -> tuple[int, str, str]:
@@ -51,6 +52,18 @@ def inscribe_ok(st=None):
         "--e2", _e_for(roles[1]),
         "--e3", _e_for(roles[2]),
     ]
+    return run(args)
+
+
+def travel_ok(gain: str | None = None) -> tuple[int, str, str]:
+    args = [
+        "inscribe",
+        "--mode", "travel",
+        "--outline", OUTLINE,
+        "--body", BODY,
+    ]
+    if gain:
+        args.extend(["--gain", gain])
     return run(args)
 
 
@@ -420,6 +433,72 @@ class TestInscribe(CwdTest):
         self.assertIn("3. 心魔问道", out)
         self.assertNotIn("成功率", out)
         self.assertNotIn("%", out)
+
+
+class TestTravel(CwdTest):
+    def test_travel_without_gain_skips_choosing(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        code, out, err = travel_ok()
+        self.assertEqual((code, err), (0, ""))
+        self.assertIn(BODY, out)
+        self.assertNotIn("1. ", out)
+        self.assertNotIn("层", out)
+        self.assertNotIn("气血+", out)
+        st = xx.load_state()
+        self.assertEqual(st["status"], "composing")
+        self.assertEqual(st["run"]["floor"], 2)
+        self.assertEqual(st["run"]["chronicle"][0]["act"], "travel")
+        self.assertTrue(st["run"]["pending_log"])
+        self.assertFalse(st["run"]["travel_looted"])
+
+    def test_travel_rejects_options(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        before = xx.load_state()
+        code, _, err = run(
+            [
+                "inscribe",
+                "--mode", "travel",
+                "--outline", OUTLINE,
+                "--body", BODY,
+                "--c1", "走近左灯",
+            ]
+        )
+        self.assertNotEqual(code, 0)
+        self.assertIn("ERROR", err)
+        self.assertEqual(xx.load_state(), before)
+
+    def test_tribulation_rejects_travel(self):
+        run(["init"])
+        st = xx.load_state()
+        st["meta"]["exp"] = 50
+        xx.save_state(st)
+        run(["start", "--seed", "1"])
+        self.assertEqual(xx.load_state()["run"]["node_type"], "tribulation")
+        before = xx.load_state()
+        code, _, err = travel_ok()
+        self.assertNotEqual(code, 0)
+        self.assertIn("ERROR", err)
+        after = xx.load_state()
+        self.assertEqual(after["status"], "composing")
+        self.assertEqual(after["run"]["floor"], before["run"]["floor"])
+        self.assertEqual(after["run"]["node_type"], "tribulation")
+
+    def test_event_battle_travel_does_not_fight(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        st = xx.load_state()
+        st["run"]["floor"] = 2
+        xx.enter_floor(st)
+        xx.save_state(st)
+        self.assertEqual(xx.load_state()["run"]["node_type"], "event_battle")
+        code, _, err = travel_ok()
+        self.assertEqual((code, err), (0, ""))
+        st = xx.load_state()
+        self.assertEqual(st["run"]["chronicle"][0]["node"], "event_battle")
+        self.assertEqual(st["run"]["chronicle"][0]["act"], "travel")
+        self.assertNotIn("开战", st["run"]["chronicle"][0]["facts"])
 
 
 class TestTribulation(CwdTest):

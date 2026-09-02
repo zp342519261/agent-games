@@ -581,6 +581,7 @@ def new_run(meta: dict[str, Any], seed: int) -> dict[str, Any]:
         "scavenged": False,
         "did_battle": False,
         "won_battle": False,
+        "travel_looted": False,
     }
 
 
@@ -736,10 +737,25 @@ def cmd_inscribe(args: argparse.Namespace) -> None:
             raise ValueError("必须指定 --mode travel 或 fork")
         outline = validate_outline(args.outline)
         body = validate_body(args.body)
+        if run["node_type"] == "tribulation" and args.mode == "travel":
+            raise ValueError("天劫必须定夺，不能游历")
         if args.mode == "travel":
-            raise ValueError("游历模式尚未接线")
+            if any(x.strip() for x in (args.c1, args.c2, args.c3)):
+                raise ValueError("游历不能带 --c*")
+            if any(effect is not None for effect in (args.e1, args.e2, args.e3)):
+                raise ValueError("游历不能带 --e*")
+            if args.gain is not None:
+                raise ValueError("游历收获尚未接线")
         if args.gain is not None:
             raise ValueError("定夺不能带 --gain")
+        if args.mode == "travel":
+            ensure_after(st)
+            run["outline"] = outline
+            run["body"] = body
+            settle_travel(st, None)
+            save_state(st)
+            emit_ui(body)
+            return
         option_texts = [args.c1.strip(), args.c2.strip(), args.c3.strip()]
         if not all(option_texts):
             raise ValueError("三个选项均不能为空")
@@ -792,6 +808,36 @@ def cmd_inscribe(args: argparse.Namespace) -> None:
     st["status"] = "choosing"
     save_state(st)
     emit_ui("\n".join([body, "", *effect_lines]))
+
+
+def settle_travel(
+    st: dict[str, Any],
+    parsed: Optional[dict[str, Any]],
+) -> None:
+    run = st["run"]
+    gained = None
+    if parsed is not None:
+        before = {
+            "inventory": len(run["inventory"]),
+            "allies": len(run["allies"]),
+            "skills": len(run["skills"]),
+        }
+        apply_parsed(st, parsed, "travel+gain")
+        for target in ("inventory", "allies", "skills"):
+            if len(run[target]) > before[target]:
+                gained = run[target][-1]
+                break
+        act = "travel+gain"
+        effect_label = "gain"
+    else:
+        act = "travel"
+        effect_label = "travel"
+    _apply_floor_end_passives(run)
+    facts = _facts_text(run, effect_label, gained, None)
+    append_chronicle(st, act, facts)
+    _award_floor_exp(st)
+    run["travel_looted"] = parsed is not None
+    advance_or_end(st)
 
 
 def apply_parsed(st: dict[str, Any], parsed: dict[str, Any], act: str) -> None:
