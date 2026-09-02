@@ -403,5 +403,53 @@ class TestChooseGrant(CwdTest):
         self.assertIn("走火", out)
 
 
+class TestFightUse(CwdTest):
+    def test_step_zeros_first_enemy_hit(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        inscribe_ok()
+        st = xx.load_state()
+        st["run"]["skills"] = [
+            {"uid": "s1", "kind": "step", "n": 1, "name": "踏影"}
+        ]
+        st["run"]["atk"] = 50
+        xx.save_state(st)
+        force_effects("battle;atk+1;hp-3", "hp+4", "qi+3")
+
+        run(["choose", "--n", "1"])
+
+        facts = xx.load_state()["run"]["chronicle"][0]["facts"]
+        self.assertIn("身法", facts)
+
+    def test_use_unknown_rejected(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        inscribe_ok()
+
+        code, _, err = run(["use", "--id", "p9"])
+
+        self.assertNotEqual(code, 0)
+        self.assertIn("ERROR", err)
+
+    def test_use_hp_pill(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        inscribe_ok()
+        st = xx.load_state()
+        st["run"]["inventory"] = [
+            {"uid": "p1", "type": "dan", "fx": "hp", "n": 8, "name": "蛇丹"}
+        ]
+        st["run"]["hp"] = 10
+        st["run"]["node_type"] = "event"
+        xx.save_state(st)
+
+        code, _, _ = run(["use", "--id", "p1"])
+
+        self.assertEqual(code, 0)
+        st = xx.load_state()
+        self.assertEqual(st["run"]["inventory"], [])
+        self.assertGreaterEqual(st["run"]["hp"], 18)
+
+
 if __name__ == "__main__":
     unittest.main()

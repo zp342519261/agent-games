@@ -773,6 +773,276 @@ def _skill_total(run: dict[str, Any], kind: str) -> int:
     return sum(skill["n"] for skill in run["skills"] if skill["kind"] == kind)
 
 
+def enemy_stats(floor: int, realm: str) -> tuple[int, int]:
+    capped_floor = min(floor, 40)
+    index = realm_index(realm)
+    return 8 + 2 * capped_floor + 4 * index, 2 + capped_floor // 2 + index
+
+
+def _fight_mod_total(run: dict[str, Any], *effects: str) -> int:
+    wanted = set(effects)
+    return sum(mod["n"] for mod in run["fight_mods"] if mod["fx"] in wanted)
+
+
+def _combat_total(run: dict[str, Any], skill: str, *effects: str) -> int:
+    return _skill_total(run, skill) + _fight_mod_total(run, *effects)
+
+
+def _trigger(
+    triggered: list[str],
+    run: dict[str, Any],
+    skill: Optional[str] = None,
+    *effects: str,
+) -> None:
+    if skill is not None and _skill_total(run, skill):
+        name = SKILLS[skill]["ui"]
+        if name not in triggered:
+            triggered.append(name)
+    wanted = set(effects)
+    for mod in run["fight_mods"]:
+        if mod["fx"] in wanted:
+            name = FX[mod["fx"]]["ui"]
+            if name not in triggered:
+                triggered.append(name)
+
+
+def _consume_revive(run: dict[str, Any]) -> bool:
+    if run["revive_used"]:
+        return False
+    for index, item in enumerate(run["inventory"]):
+        if item["fx"] == "revive":
+            del run["inventory"][index]
+            run["revive_used"] = True
+            return True
+    return False
+
+
+def fight(st: dict[str, Any]) -> dict[str, Any]:
+    run = st["run"]
+    enemy_hp, enemy_atk = enemy_stats(run["floor"], run["realm"])
+    enemy_hp = max(1, enemy_hp - _combat_total(run, "weaken", "weaken"))
+    bomb = _fight_mod_total(run, "bomb")
+    if bomb:
+        enemy_hp = max(1, enemy_hp - run["atk"] * bomb)
+
+    barrier = _combat_total(run, "barrier", "barrier")
+    poison = _combat_total(run, "poison", "poison")
+    pack = _combat_total(run, "pack", "pack_fight")
+    slow = _combat_total(run, "slow", "slow")
+    guard = _combat_total(run, "guard", "guard_fight")
+    drain = _combat_total(run, "drain", "drain_fight")
+    reflect = _combat_total(run, "reflect", "reflect_fight")
+    thunder = _combat_total(run, "thunder", "thunder_fight")
+    frenzy = _combat_total(run, "frenzy", "frenzy_fight")
+    vigor = _combat_total(run, "vigor", "vigor_fight")
+    execute = _combat_total(run, "execute", "execute_fight")
+    blood_price = _combat_total(run, "blood_price", "blood_price_fight")
+    last_stand = _combat_total(run, "last_stand", "last_stand_fight")
+    extra_hit = bool(
+        _skill_total(run, "haste")
+        or _fight_mod_total(run, "second", "haste")
+    )
+    partner = sum(a["n"] for a in run["allies"] if a["bond"] == "partner")
+    partner += _skill_total(run, "brother")
+    dao = sum(a["n"] for a in run["allies"] if a["bond"] == "dao")
+    beasts = [a["n"] for a in run["allies"] if a["bond"] == "beast"]
+    iron = _fight_mod_total(run, "iron")
+
+    log = [f"开战：敌 气血{enemy_hp} 攻{enemy_atk}"]
+    triggered: list[str] = []
+    if _combat_total(run, "weaken", "weaken"):
+        _trigger(triggered, run, "weaken", "weaken")
+    if bomb:
+        _trigger(triggered, run, None, "bomb")
+    if _combat_total(run, "step", "step_fight"):
+        _trigger(triggered, run, "step", "step_fight")
+    player_strikes = 0
+    enemy_strikes = 0
+    last_stand_used = False
+
+    def survive_lethal() -> bool:
+        nonlocal last_stand_used
+        if run["hp"] > 0:
+            return True
+        if _consume_revive(run):
+            run["hp"] = 1
+            if "续命" not in triggered:
+                triggered.append("续命")
+            return True
+        if last_stand and not last_stand_used:
+            run["hp"] = 1
+            last_stand_used = True
+            _trigger(triggered, run, "last_stand", "last_stand_fight")
+            return True
+        return False
+
+    def player_hit(round_no: int, with_thunder: bool) -> None:
+        nonlocal enemy_hp, player_strikes
+        if blood_price:
+            run["hp"] -= 1
+            _trigger(triggered, run, "blood_price", "blood_price_fight")
+            if not survive_lethal():
+                return
+        bonus = random.Random(
+            run["seed"] + 1000 * run["floor"] + player_strikes
+        ).randint(0, 1)
+        dawn = run["dawn"] + _skill_total(run, "dawn")
+        sword = _skill_total(run, "sword")
+        damage = run["atk"] + dawn + bonus + partner + sword
+        if dawn:
+            _trigger(triggered, run, "dawn", "dawn_fight")
+        if sword:
+            _trigger(triggered, run, "sword")
+        if _skill_total(run, "brother"):
+            _trigger(triggered, run, "brother")
+        if frenzy and run["hp"] * 2 <= run["max_hp"]:
+            damage += frenzy
+            _trigger(triggered, run, "frenzy", "frenzy_fight")
+        if vigor and run["hp"] * 2 > run["max_hp"]:
+            damage += vigor
+            _trigger(triggered, run, "vigor", "vigor_fight")
+        if execute and enemy_hp * 2 <= enemy_stats(run["floor"], run["realm"])[0]:
+            damage += execute
+            _trigger(triggered, run, "execute", "execute_fight")
+        if with_thunder and thunder:
+            damage += thunder
+            _trigger(triggered, run, "thunder", "thunder_fight")
+        enemy_hp -= damage
+        player_strikes += 1
+        log.append(f"第{round_no}轮 你造成{damage}伤害")
+        if drain:
+            run["hp"] = min(run["max_hp"], run["hp"] + drain)
+            _trigger(triggered, run, "drain", "drain_fight")
+        leech = _skill_total(run, "leech_qi") + _fight_mod_total(run, "qi_fight")
+        if leech:
+            run["qi"] = min(qi_cap(run), run["qi"] + leech)
+            _trigger(triggered, run, "leech_qi", "qi_fight")
+
+    for round_no in range(1, 41):
+        regen = _skill_total(run, "regen")
+        if regen:
+            run["hp"] = min(run["max_hp"], run["hp"] + regen)
+            _trigger(triggered, run, "regen")
+        if dao:
+            run["hp"] = min(run["max_hp"], run["hp"] + dao)
+        if poison and round_no >= 2:
+            enemy_hp -= poison
+            _trigger(triggered, run, "poison", "poison")
+        if enemy_hp <= 0:
+            break
+
+        for beast in beasts:
+            damage = beast + pack
+            enemy_hp -= damage
+            log.append(f"第{round_no}轮 灵兽造成{damage}伤害")
+            if pack:
+                _trigger(triggered, run, "pack", "pack_fight")
+            if enemy_hp <= 0:
+                break
+        if enemy_hp <= 0:
+            break
+
+        player_hit(round_no, player_strikes == 0)
+        if run["hp"] <= 0 or enemy_hp <= 0:
+            break
+        if extra_hit:
+            _trigger(triggered, run, "haste", "second", "haste")
+            player_hit(round_no, False)
+            if run["hp"] <= 0 or enemy_hp <= 0:
+                break
+
+        enemy_strikes += 1
+        damage = max(1, enemy_atk - slow)
+        dodged = (
+            (enemy_strikes == 1 and _combat_total(run, "step", "step_fight"))
+            or (enemy_strikes % 2 == 0 and _combat_total(run, "freeze", "freeze"))
+        )
+        if dodged:
+            damage = 0
+            if enemy_strikes == 1:
+                _trigger(triggered, run, "step", "step_fight")
+            else:
+                _trigger(triggered, run, "freeze", "freeze")
+        else:
+            if slow:
+                _trigger(triggered, run, "slow", "slow")
+            reduction = iron + guard
+            if run["floor"] % 2 == 0:
+                reduction += _skill_total(run, "dusk")
+                _trigger(triggered, run, "dusk")
+            damage = max(0, damage - reduction)
+            if iron:
+                _trigger(triggered, run, None, "iron")
+            if guard:
+                _trigger(triggered, run, "guard", "guard_fight")
+
+        absorbed = min(barrier, damage)
+        barrier -= absorbed
+        hp_damage = damage - absorbed
+        if absorbed:
+            _trigger(triggered, run, "barrier", "barrier")
+        run["hp"] -= hp_damage
+        log.append(f"第{round_no}轮 敌造成{hp_damage}伤害")
+        if hp_damage and reflect:
+            enemy_hp -= reflect
+            _trigger(triggered, run, "reflect", "reflect_fight")
+        if not survive_lethal() or enemy_hp <= 0:
+            break
+
+    won = enemy_hp <= 0 and run["hp"] > 0
+    if not won:
+        run["hp"] = 0
+        run["death_cause"] = "combat"
+    run["did_battle"] = True
+    run["won_battle"] = won
+    log.append("战胜" if won else "战败")
+    report = {"log": log, "won": won, "triggered": triggered}
+    run["last_fight"] = report
+    return report
+
+
+def should_fight(
+    node_type: str,
+    parsed: dict[str, Any],
+    mods: list[dict[str, Any]],
+) -> bool:
+    effects = {mod["fx"] for mod in mods}
+    if effects & {"ward", "skip", "mirror", "rest"}:
+        return False
+    return node_type == "event_battle" or parsed["battle"] or "bait" in effects
+
+
+def _facts_text(
+    run: dict[str, Any],
+    effect: str,
+    gained: Optional[dict[str, Any]],
+    report: Optional[dict[str, Any]],
+) -> str:
+    parts = [
+        effect,
+        f"气血{run['hp']}/{run['max_hp']} 攻{run['atk']} 灵气{run['qi']}",
+    ]
+    if gained is not None:
+        parts.append(f"获得{gained['name']}")
+    if report is not None:
+        parts.extend(("开战", "战胜" if report["won"] else "战败"))
+        parts.extend(report["triggered"])
+    return "；".join(part for part in parts if part)
+
+
+def _award_floor_exp(st: dict[str, Any]) -> None:
+    run = st["run"]
+    if run["hp"] <= 0:
+        return
+    layer_exp = 5 + _skill_total(run, "insight")
+    layer_exp += _fight_mod_total(run, "insight_now")
+    if not run["did_battle"]:
+        layer_exp += _skill_total(run, "sage")
+    if _fight_mod_total(run, "double_exp"):
+        layer_exp *= 2
+    st["meta"]["exp"] += layer_exp
+
+
 def _render_choice_result(
     run: dict[str, Any],
     choice: dict[str, Any],
@@ -799,37 +1069,106 @@ def cmd_choose(args: argparse.Namespace) -> None:
     run = st["run"]
     choice = run["choices"][args.n - 1]
     parsed = choice["parsed"]
-    run["did_battle"] = parsed["battle"] or run["node_type"] == "event_battle"
-
     before_counts = {
         "inventory": len(run["inventory"]),
         "allies": len(run["allies"]),
         "skills": len(run["skills"]),
     }
     apply_parsed(st, parsed, f"choose:{args.n}")
+    report = fight(st) if run["hp"] > 0 and should_fight(
+        run["node_type"], parsed, run["fight_mods"]
+    ) else None
     gained = None
     for target in ("inventory", "allies", "skills"):
         if len(run[target]) > before_counts[target]:
             gained = run[target][-1]
             break
 
-    facts = {
-        "effect": choice["effect"],
-        "hp": run["hp"],
-        "max_hp": run["max_hp"],
-        "atk": run["atk"],
-        "qi": run["qi"],
-        "gained": gained,
-        "did_battle": run["did_battle"],
-    }
+    facts = _facts_text(run, choice["effect"], gained, report)
     result_ui = _render_choice_result(run, choice, gained)
     append_chronicle(st, f"choose:{args.n}", facts)
 
-    if run["hp"] > 0:
-        layer_exp = 5 + _skill_total(run, "insight")
-        if not run["did_battle"]:
-            layer_exp += _skill_total(run, "sage")
-        st["meta"]["exp"] += layer_exp
+    _award_floor_exp(st)
+    advance_or_end(st)
+    save_state(st)
+    emit_ui(result_ui)
+
+
+def _apply_item(st: dict[str, Any], item: dict[str, Any]) -> None:
+    run = st["run"]
+    fx, n = item["fx"], item["n"]
+    if fx == "hp":
+        run["hp"] = min(run["max_hp"], run["hp"] + n)
+    elif fx == "qi":
+        run["qi"] = min(qi_cap(run), run["qi"] + n)
+    elif fx == "atk":
+        run["atk"] += n
+    elif fx == "maxhp":
+        run["max_hp"] += n
+        run["hp"] += n
+    elif fx == "fullhp":
+        run["hp"] = run["max_hp"]
+    elif fx == "exp":
+        st["meta"]["exp"] += n
+    elif fx == "luck_floor":
+        run["luck_floor"] += n
+    elif fx == "meridians_now":
+        run["qi_bonus"] += n
+        run["qi"] = min(qi_cap(run), run["qi"] + n)
+    elif fx == "trib":
+        run["trib_run"] += n
+    elif fx == "dawn_fight":
+        run["dawn"] += n
+        run["fight_mods"].append(dict(item))
+    elif fx == "spark":
+        ward = _skill_total(run, "spark_ward")
+        run["hp"] = max(0, run["hp"] - max(0, n - ward))
+    elif fx == "mirror":
+        ward = _skill_total(run, "spark_ward")
+        run["hp"] = max(0, run["hp"] - max(0, 4 - ward))
+        run["fight_mods"].append(dict(item))
+    elif fx == "rest":
+        run["hp"] = min(run["max_hp"], run["hp"] + n)
+        run["fight_mods"].append(dict(item))
+    else:
+        run["fight_mods"].append(dict(item))
+    if run["hp"] <= 0:
+        run["death_cause"] = "backlash"
+
+
+def cmd_use(args: argparse.Namespace) -> None:
+    st = require_state()
+    if st["status"] != "choosing":
+        die("只能在 choosing 时 use")
+    run = st["run"]
+    if run["node_type"] == "tribulation":
+        die("天劫层不能 use")
+    item = next((x for x in run["inventory"] if x["uid"] == args.id), None)
+    if item is None:
+        die("未知死物 id")
+    if item["fx"] == "revive":
+        die("续命死物不能主动 use")
+
+    run["inventory"].remove(item)
+    _apply_item(st, item)
+    empty = _new_effect()
+    report = fight(st) if run["hp"] > 0 and should_fight(
+        run["node_type"], empty, run["fight_mods"]
+    ) else None
+    facts = _facts_text(run, f"use:{item['uid']}:{item['name']}", None, report)
+    append_chronicle(st, f"use:{item['uid']}", facts)
+    _award_floor_exp(st)
+    result_ui = "\n".join(
+        [
+            f"已使用：{item['name']}（{item['uid']}）",
+            f"气血：{run['hp']}/{run['max_hp']}  攻：{run['atk']}  灵气：{run['qi']}",
+            (
+                f"此世终结：{DEATH_LABEL[run['death_cause']]}"
+                if run["hp"] <= 0
+                else f"进入第{run['floor'] + 1}层"
+            ),
+        ]
+    )
     advance_or_end(st)
     save_state(st)
     emit_ui(result_ui)
@@ -891,9 +1230,11 @@ def build_parser() -> Parser:
     choose = sub.add_parser("choose")
     choose.add_argument("--n", type=int, choices=(1, 2, 3), required=True)
     choose.set_defaults(func=cmd_choose)
+    use = sub.add_parser("use")
+    use.add_argument("--id", required=True)
+    use.set_defaults(func=cmd_use)
     sub.add_parser("info").set_defaults(func=cmd_info)
     for name in (
-        "use",
         "log",
         "recall",
         "giveup",
