@@ -230,6 +230,13 @@ class TestInscribe(CwdTest):
     def test_unknown_skill_rejected(self):
         self.assertRaises(ValueError, xx.parse_effect, "skill:kind=foo:n=1:name=乱功")
 
+    def test_unknown_lover_bond_rejected(self):
+        self.assertRaises(
+            ValueError,
+            xx.parse_effect,
+            "ally:bond=lover:n=1:name=月华",
+        )
+
     def test_safe_frenzy_rejected(self):
         parsed = xx.parse_effect("skill:kind=frenzy:n=1:name=狂刀诀")
         self.assertRaises(ValueError, xx.validate_effect, "SAFE", parsed, "event")
@@ -264,6 +271,12 @@ class TestInscribe(CwdTest):
             [choice["effect"] for choice in choices],
             ["trib:hard", "trib:guard", "trib:heart"],
         )
+
+    def test_trib_chances_counts_dao_entries_not_ally_n(self):
+        run_state = xx.new_run(xx.default_meta(), 1)
+        run_state["skills"] = [{"kind": "oath", "n": 2, "name": "同心诀"}]
+        run_state["allies"] = [{"bond": "dao", "n": 3, "name": "月华"}]
+        self.assertEqual(xx.trib_chances(run_state), (14, 42, 5))
 
 
 if __name__ == "__main__":

@@ -320,7 +320,7 @@ def parse_effect(text: str) -> dict[str, Any]:
             if reward_kind is not None:
                 raise ValueError("grant/ally/skill 不能同时出现")
             bond, n_text, name = ally.groups()
-            if bond not in {"partner", "dao", "lover", "beast"}:
+            if bond not in {"partner", "dao", "beast"}:
                 raise ValueError("未知同行关系")
             parsed["ally"] = {
                 "bond": bond,
@@ -442,7 +442,7 @@ def fmt_effect(parsed: dict[str, Any]) -> str:
         )
     if parsed["ally"]:
         ally = parsed["ally"]
-        bond_ui = {"partner": "伙伴", "dao": "道侣", "lover": "道侣", "beast": "灵兽"}
+        bond_ui = {"partner": "伙伴", "dao": "道侣", "beast": "灵兽"}
         lines.append(f"同行：{ally['name']}（{bond_ui[ally['bond']]}）")
     if parsed["skill"]:
         skill = parsed["skill"]
@@ -454,11 +454,7 @@ def trib_chances(run: dict[str, Any]) -> tuple[int, int, int]:
     def skill_n(kind: str) -> int:
         return sum(skill["n"] for skill in run["skills"] if skill["kind"] == kind)
 
-    dao_count = sum(
-        ally["n"]
-        for ally in run["allies"]
-        if ally["bond"] in {"dao", "lover"}
-    )
+    dao_count = sum(1 for ally in run["allies"] if ally["bond"] == "dao")
     base = run["trib_run"] + skill_n("will") + skill_n("oath") * dao_count
 
     def clamp(value: int) -> int:
