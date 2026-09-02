@@ -233,10 +233,10 @@ def preview_rebirth(st: dict[str, Any]) -> dict[str, Any]:
     max_hp = max(20, run["max_hp"] * attr_rate // 10)
     atk = max(3, run["atk"] * attr_rate // 10)
     qi = run["qi"] * attr_rate // 10
-    realm = REALMS[0]
-    for candidate, threshold in zip(REALMS, THRESHOLDS):
-        if threshold <= exp:
-            realm = candidate
+    realm_i = realm_index(run["realm"])
+    while realm_i > 0 and exp < THRESHOLDS[realm_i]:
+        realm_i -= 1
+    realm = REALMS[realm_i]
 
     return {
         "slot_cap": slot_cap,
@@ -1170,6 +1170,14 @@ def _award_floor_exp(st: dict[str, Any]) -> None:
     st["meta"]["exp"] += layer_exp
 
 
+def _apply_floor_end_passives(run: dict[str, Any]) -> None:
+    if run["death_cause"] is None and not run["did_battle"]:
+        run["hp"] = min(
+            run["max_hp"],
+            run["hp"] + _skill_total(run, "meditation"),
+        )
+
+
 def _render_choice_result(
     run: dict[str, Any],
     choice: dict[str, Any],
@@ -1213,6 +1221,7 @@ def cmd_choose(args: argparse.Namespace) -> None:
     parsed = choice["parsed"]
     if run["node_type"] == "tribulation":
         resolve_trib(st, args.n)
+        _apply_floor_end_passives(run)
         facts = _facts_text(run, choice["effect"], None, None)
         result_ui = _render_choice_result(run, choice, None)
         append_chronicle(st, f"choose:{args.n}", facts)
@@ -1233,6 +1242,7 @@ def cmd_choose(args: argparse.Namespace) -> None:
     report = fight(st) if run["death_cause"] is None and should_fight(
         run["node_type"], parsed, run["fight_mods"]
     ) else None
+    _apply_floor_end_passives(run)
     gained = None
     for target in ("inventory", "allies", "skills"):
         if len(run[target]) > before_counts[target]:
@@ -1271,7 +1281,7 @@ def _apply_item(st: dict[str, Any], item: dict[str, Any]) -> None:
         run["qi_bonus"] += n
         run["qi"] = min(qi_cap(run), run["qi"] + n)
     elif fx == "trib":
-        run["trib_run"] += n
+        run["trib_run"] = min(20, run["trib_run"] + n)
     elif fx == "dawn_fight":
         run["dawn"] += n
         run["fight_mods"].append(dict(item))
@@ -1311,6 +1321,7 @@ def cmd_use(args: argparse.Namespace) -> None:
     report = fight(st) if run["hp"] > 0 and should_fight(
         run["node_type"], empty, run["fight_mods"]
     ) else None
+    _apply_floor_end_passives(run)
     facts = _facts_text(run, f"use:{item['uid']}:{item['name']}", None, report)
     append_chronicle(st, f"use:{item['uid']}", facts)
     _award_floor_exp(st)
@@ -1332,10 +1343,19 @@ def cmd_use(args: argparse.Namespace) -> None:
 
 def _render_choosing(st: dict[str, Any]) -> str:
     run = st["run"]
-    effect_lines = [
-        f"{i}. {choice['text']}｜{choice['role']}｜{fmt_effect(choice['parsed'])}"
-        for i, choice in enumerate(run["choices"], 1)
-    ]
+    if run["node_type"] == "tribulation":
+        effect_lines = [
+            f"{i}. {choice['text']}｜成功率 {chance}%"
+            for i, (choice, chance) in enumerate(
+                zip(run["choices"], trib_chances(run)),
+                1,
+            )
+        ]
+    else:
+        effect_lines = [
+            f"{i}. {choice['text']}｜{choice['role']}｜{fmt_effect(choice['parsed'])}"
+            for i, choice in enumerate(run["choices"], 1)
+        ]
     return "\n".join([run["body"], "", *effect_lines])
 
 
@@ -1447,6 +1467,7 @@ def cmd_giveup(_: argparse.Namespace) -> None:
     st = require_state()
     if st["status"] not in {"composing", "choosing"}:
         die("只能在 composing 或 choosing 时 giveup")
+    ensure_after(st)
     run = st["run"]
     run["death_cause"] = "given_up"
     append_chronicle(st, "giveup", "自绝")

@@ -328,6 +328,29 @@ class TestInscribe(CwdTest):
         run_state["allies"] = [{"bond": "dao", "n": 3, "name": "月华"}]
         self.assertEqual(xx.trib_chances(run_state), (14, 42, 5))
 
+    def test_tribulation_info_repeats_each_strategy_chance(self):
+        run(["init"])
+        st = xx.load_state()
+        st["meta"]["exp"] = 50
+        xx.save_state(st)
+        run(["start", "--seed", "1"])
+        code, _, err = run(
+            [
+                "inscribe",
+                "--outline", OUTLINE,
+                "--body", "劫云压城，三条生路同时显现。",
+                "--c1", "硬渡", "--c2", "护体", "--c3", "心魔问道",
+            ]
+        )
+        self.assertEqual((code, err), (0, ""))
+
+        code, out, err = run(["info"])
+
+        self.assertEqual((code, err), (0, ""))
+        self.assertIn("1. 硬渡｜成功率 12%", out)
+        self.assertIn("2. 护体｜成功率 40%", out)
+        self.assertIn("3. 心魔问道｜成功率 5%", out)
+
 
 class TestTribulation(CwdTest):
     def _start_tribulation(self, *, atk=3, qi=0, seed=1):
@@ -503,6 +526,22 @@ class TestChooseGrant(CwdTest):
         self.assertEqual(st["run"]["chronicle"][0]["setup"], OUTLINE)
         self.assertEqual(st["run"]["chronicle"][0]["act"], "choose:1")
         self.assertIsNone(st["run"]["chronicle"][0]["after"])
+
+    def test_meditation_heals_after_non_battle_floor_and_clamps(self):
+        self._choosing()
+        st = xx.load_state()
+        st["run"]["skills"] = [
+            {"uid": "s1", "kind": "meditation", "n": 3, "name": "静息诀"}
+        ]
+        st["run"]["hp"] = 19
+        xx.save_state(st)
+        force_effects("qi+1", "qi+1", "qi+1")
+
+        run(["choose", "--n", "1"])
+
+        st = xx.load_state()
+        self.assertFalse(st["run"]["did_battle"])
+        self.assertEqual(st["run"]["hp"], 20)
 
     def test_choose_backlash_ends_run(self):
         self._choosing()
@@ -702,6 +741,21 @@ class TestFightUse(CwdTest):
         run(["use", "--id", "p1"])
 
         self.assertEqual(xx.load_state()["meta"]["exp"], 8)
+
+    def test_trib_item_caps_run_bonus_at_twenty(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        inscribe_ok()
+        st = xx.load_state()
+        st["run"]["inventory"] = [
+            {"uid": "p1", "type": "dan", "fx": "trib", "n": 15, "name": "祭天丹"}
+        ]
+        st["run"]["trib_run"] = 15
+        xx.save_state(st)
+
+        run(["use", "--id", "p1"])
+
+        self.assertEqual(xx.load_state()["run"]["trib_run"], 20)
 
 
 class TestDeaths(CwdTest):
@@ -909,6 +963,23 @@ class TestChronicle(CwdTest):
         code, out, _ = run(["recall"])
         self.assertIn(lives[0]["digest"], out)
 
+    def test_giveup_fills_previous_pending_after_before_appending(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        inscribe_ok()
+        force_effects("hp+4", "qi+3", "maxhp+2")
+        run(["choose", "--n", "1"])
+
+        run(["giveup"])
+
+        st = xx.load_state()
+        self.assertEqual(len(st["run"]["chronicle"]), 2)
+        self.assertEqual(
+            st["run"]["chronicle"][0]["after"],
+            "选1；气血20/20；未战；下层",
+        )
+        self.assertEqual(st["run"]["chronicle"][1]["act"], "giveup")
+
     def test_lives_cap_8(self):
         run(["init"])
         for i in range(9):
@@ -1058,7 +1129,9 @@ class TestRebirth(CwdTest):
             ],
         )
         st["meta"].update({"exp": 149, "realm": "金丹"})
-        st["run"].update({"max_hp": 21, "atk": 3, "qi": 11})
+        st["run"].update(
+            {"realm": "金丹", "max_hp": 21, "atk": 3, "qi": 11}
+        )
 
         preview = xx.preview_rebirth(st)
 
@@ -1067,6 +1140,17 @@ class TestRebirth(CwdTest):
         self.assertEqual(preview["max_hp"], 20)
         self.assertEqual(preview["atk"], 3)
         self.assertEqual(preview["qi"], 9)
+
+    def test_preview_never_promotes_above_death_realm(self):
+        st = self._dead()
+        st["meta"]["exp"] = 350
+        st["meta"]["realm"] = "筑基"
+        st["run"]["realm"] = "筑基"
+
+        preview = xx.preview_rebirth(st)
+
+        self.assertEqual(preview["exp"], 245)
+        self.assertEqual(preview["realm"], "筑基")
 
     def test_ended_info_matches_next_and_drops_allies(self):
         self._dead(
