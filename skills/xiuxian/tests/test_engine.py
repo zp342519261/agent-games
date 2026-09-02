@@ -781,5 +781,114 @@ class TestDeaths(CwdTest):
         self.assertEqual(st["run"]["death_cause"], "backlash")
 
 
+class TestRebirth(CwdTest):
+    def _dead(self, **run_over):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        run(["giveup"])
+        st = xx.load_state()
+        st["run"].update(run_over)
+        xx.save_state(st)
+        return st
+
+    def test_preview_uses_pouch_and_preincrement_cycles_for_slot_cap(self):
+        st = self._dead(
+            skills=[{"uid": "s1", "kind": "pouch", "n": 1, "name": "扩容"}],
+        )
+        st["meta"]["cycles"] = 5
+
+        preview = xx.preview_rebirth(st)
+
+        self.assertEqual(preview["slot_cap"], 10)
+
+    def test_next_keeps_best_items_and_writes_uid_order(self):
+        items = [
+            {"uid": uid, "type": "dan", "fx": "hp", "n": n, "name": uid}
+            for uid, n in (
+                ("p10", 4), ("p2", 4), ("p7", 6),
+                ("p1", 1), ("p5", 5), ("p3", 3),
+            )
+        ]
+        self._dead(inventory=items, skills=[])
+
+        code, out, err = run(["next"])
+
+        self.assertEqual((code, err), (0, ""))
+        self.assertIn("带走", out)
+        self.assertIn("遗弃", out)
+        meta = xx.load_state()["meta"]
+        self.assertEqual(
+            [(item["uid"], item["n"]) for item in meta["inventory"]],
+            [("p2", 4), ("p5", 5), ("p7", 6), ("p10", 4)],
+        )
+        self.assertEqual(meta["cycles"], 1)
+
+    def test_next_keeps_three_best_skills_and_writes_uid_order(self):
+        skills = [
+            {"uid": uid, "kind": "sword", "n": n, "name": uid}
+            for uid, n in (
+                ("s9", 2), ("s2", 4), ("s10", 2), ("s1", 1), ("s7", 3),
+            )
+        ]
+        self._dead(skills=skills, inventory=[])
+
+        run(["next"])
+
+        kept = xx.load_state()["meta"]["skills"]
+        self.assertEqual(
+            [(skill["uid"], skill["n"]) for skill in kept],
+            [("s2", 4), ("s7", 3), ("s10", 2)],
+        )
+
+    def test_preview_applies_memory_vessel_and_recomputes_realm(self):
+        st = self._dead(
+            skills=[
+                {"uid": "s1", "kind": "memory", "n": 1, "name": "残忆"},
+                {"uid": "s2", "kind": "vessel", "n": 1, "name": "道器"},
+            ],
+        )
+        st["meta"].update({"exp": 149, "realm": "金丹"})
+        st["run"].update({"max_hp": 21, "atk": 3, "qi": 11})
+
+        preview = xx.preview_rebirth(st)
+
+        self.assertEqual(preview["exp"], 119)
+        self.assertEqual(preview["realm"], "筑基")
+        self.assertEqual(preview["max_hp"], 20)
+        self.assertEqual(preview["atk"], 3)
+        self.assertEqual(preview["qi"], 9)
+
+    def test_ended_info_matches_next_and_drops_allies(self):
+        self._dead(
+            inventory=[
+                {"uid": "p1", "type": "dan", "fx": "hp", "n": 4, "name": "青丹"}
+            ],
+            skills=[{"uid": "s1", "kind": "sword", "n": 1, "name": "剑诀"}],
+            allies=[{"uid": "a1", "bond": "partner", "n": 1, "name": "阿青"}],
+        )
+
+        _, info_out, _ = run(["info"])
+        code, next_out, err = run(["next"])
+
+        self.assertEqual((code, err), (0, ""))
+        for text in ("青丹", "剑诀", "活物未随轮回"):
+            self.assertIn(text, info_out)
+            self.assertIn(text, next_out)
+        st = xx.load_state()
+        self.assertEqual(st["status"], "hub")
+        self.assertIsNone(st["run"])
+        self.assertNotIn("allies", st["meta"])
+        run(["start", "--seed", "2"])
+        self.assertEqual(xx.load_state()["run"]["allies"], [])
+
+    def test_next_rejects_non_ended_state(self):
+        run(["init"])
+
+        code, _, err = run(["next"])
+
+        self.assertNotEqual(code, 0)
+        self.assertIn("ERROR", err)
+
+
 if __name__ == "__main__":
     unittest.main()

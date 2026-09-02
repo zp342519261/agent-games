@@ -205,6 +205,53 @@ def slot_cap_from(cycles: int, pouch_n: int) -> int:
     return min(10, 4 + cycles + pouch_n)
 
 
+def _rebirth_selection(
+    entries: list[dict[str, Any]],
+    limit: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    ranked = sorted(
+        entries,
+        key=lambda entry: (-entry["n"], -int(entry["uid"][1:])),
+    )
+    kept = sorted(ranked[:limit], key=lambda entry: int(entry["uid"][1:]))
+    dropped = sorted(ranked[limit:], key=lambda entry: int(entry["uid"][1:]))
+    return kept, dropped
+
+
+def preview_rebirth(st: dict[str, Any]) -> dict[str, Any]:
+    run = st["run"]
+    meta = st["meta"]
+    skills = run["skills"]
+    skill_kinds = {skill["kind"] for skill in skills}
+    pouch_n = sum(skill["n"] for skill in skills if skill["kind"] == "pouch")
+    slot_cap = slot_cap_from(meta["cycles"], pouch_n)
+    kept_items, dropped_items = _rebirth_selection(run["inventory"], slot_cap)
+    kept_skills, dropped_skills = _rebirth_selection(skills, 3)
+
+    exp = meta["exp"] * (8 if "memory" in skill_kinds else 7) // 10
+    attr_rate = 9 if "vessel" in skill_kinds else 8
+    max_hp = max(20, run["max_hp"] * attr_rate // 10)
+    atk = max(3, run["atk"] * attr_rate // 10)
+    qi = run["qi"] * attr_rate // 10
+    realm = REALMS[0]
+    for candidate, threshold in zip(REALMS, THRESHOLDS):
+        if threshold <= exp:
+            realm = candidate
+
+    return {
+        "slot_cap": slot_cap,
+        "kept_items": kept_items,
+        "dropped_items": dropped_items,
+        "kept_skills": kept_skills,
+        "dropped_skills": dropped_skills,
+        "exp": exp,
+        "realm": realm,
+        "max_hp": max_hp,
+        "atk": atk,
+        "qi": qi,
+    }
+
+
 def realm_index(realm: str) -> int:
     return REALMS.index(realm)
 
@@ -1254,14 +1301,39 @@ def _render_choosing(st: dict[str, Any]) -> str:
     return "\n".join([run["body"], "", *effect_lines])
 
 
+def _rebirth_names(entries: list[dict[str, Any]]) -> str:
+    return "、".join(entry["name"] for entry in entries) or "无"
+
+
+def _render_rebirth(st: dict[str, Any], preview: dict[str, Any]) -> str:
+    allies = st["run"]["allies"]
+    return "\n".join(
+        [
+            f"带走死物：{_rebirth_names(preview['kept_items'])}",
+            f"遗弃死物：{_rebirth_names(preview['dropped_items'])}",
+            f"带走功法：{_rebirth_names(preview['kept_skills'])}",
+            f"遗弃功法：{_rebirth_names(preview['dropped_skills'])}",
+            f"活物未随轮回：{_rebirth_names(allies)}",
+            (
+                f"轮回后：{preview['realm']} 经验{preview['exp']} "
+                f"气血上限{preview['max_hp']} 攻{preview['atk']} 灵气{preview['qi']}"
+            ),
+        ]
+    )
+
+
 def _render_ended(st: dict[str, Any]) -> str:
     run = st["run"]
     cause = DEATH_LABEL.get(run["death_cause"], "未知")
+    rebirth = _render_rebirth(st, preview_rebirth(st))
     return "\n".join(
         [
             "【轮回系统】此世已终",
             f"境界：{run['realm']}  层数：{run['floor']}",
             f"死因：{cause}",
+            "",
+            "待轮回：",
+            rebirth,
         ]
     )
 
@@ -1291,6 +1363,33 @@ def cmd_giveup(_: argparse.Namespace) -> None:
     emit_ui(_render_ended(st))
 
 
+def cmd_next(_: argparse.Namespace) -> None:
+    st = require_state()
+    if st["status"] != "ended":
+        die("只能在 ended 时 next")
+
+    preview = preview_rebirth(st)
+    notice = "\n".join(["轮回完成：", _render_rebirth(st, preview)])
+    meta = st["meta"]
+    meta.update(
+        {
+            "inventory": preview["kept_items"],
+            "skills": preview["kept_skills"],
+            "exp": preview["exp"],
+            "realm": preview["realm"],
+            "max_hp": preview["max_hp"],
+            "atk": preview["atk"],
+            "qi": preview["qi"],
+        }
+    )
+    meta.pop("allies", None)
+    meta["cycles"] += 1
+    st["run"] = None
+    st["status"] = "hub"
+    save_state(st)
+    emit_ui(render_hub(st, notice))
+
+
 def build_parser() -> Parser:
     p = Parser(prog="xiuxian_engine")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -1318,10 +1417,10 @@ def build_parser() -> Parser:
     use.set_defaults(func=cmd_use)
     sub.add_parser("info").set_defaults(func=cmd_info)
     sub.add_parser("giveup").set_defaults(func=cmd_giveup)
+    sub.add_parser("next").set_defaults(func=cmd_next)
     for name in (
         "log",
         "recall",
-        "next",
     ):
         sub.add_parser(name).set_defaults(func=cmd_stub)
     return p
