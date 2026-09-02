@@ -113,6 +113,32 @@ class TestInitHelp(CwdTest):
         self.assertIn("ERROR", err)
 
 
+class TestSkillDocs(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(__file__).resolve().parents[1]
+
+    def test_skill_frontmatter_and_rules(self):
+        text = (self.root / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("name: xiuxian", text)
+        self.assertIn("disable-model-invocation: true", text)
+        self.assertIn("/修仙", text)
+        self.assertIn("XIUXIAN_UI_BEGIN", text)
+        self.assertIn("draft", text)
+        self.assertIn("--outline", text)
+        self.assertIn("禁止", text)
+        self.assertIn("活物", text)
+        self.assertNotIn("碎片店", text)
+
+    def test_reference_tables(self):
+        text = (self.root / "reference.md").read_text(encoding="utf-8")
+        self.assertIn("青州", text)
+        self.assertIn("`dan`", text)
+        self.assertIn("`revive`", text)
+        self.assertIn("`breath`", text)
+        self.assertIn("`vessel`", text)
+        self.assertIn("黑名单", text)
+
+
 class TestStartDraft(CwdTest):
     def test_start_seed_stable_roles(self):
         run(["init"])
