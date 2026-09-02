@@ -270,6 +270,13 @@ def validate_outline(outline: str) -> str:
     return outline
 
 
+def validate_body(body: str) -> str:
+    body = body.strip()
+    if not 20 <= len(body) <= 400:
+        raise ValueError("body 长度须为 20～400")
+    return body
+
+
 def _new_effect() -> dict[str, Any]:
     return {
         "hp": 0,
@@ -725,11 +732,17 @@ def cmd_inscribe(args: argparse.Namespace) -> None:
         die("只能在 composing 时 inscribe")
     run = st["run"]
     try:
+        if args.mode not in ("travel", "fork"):
+            raise ValueError("必须指定 --mode travel 或 fork")
         outline = validate_outline(args.outline)
-        body = args.body.strip()
+        body = validate_body(args.body)
+        if args.mode == "travel":
+            raise ValueError("游历模式尚未接线")
+        if args.gain:
+            raise ValueError("定夺不能带 --gain")
         option_texts = [args.c1.strip(), args.c2.strip(), args.c3.strip()]
-        if not body or not all(option_texts):
-            raise ValueError("正文和三个选项均不能为空")
+        if not all(option_texts):
+            raise ValueError("三个选项均不能为空")
 
         if run["node_type"] == "tribulation":
             if any(effect is not None for effect in (args.e1, args.e2, args.e3)):
@@ -742,10 +755,9 @@ def cmd_inscribe(args: argparse.Namespace) -> None:
                 choices.append(
                     {"text": text, "effect": f"trib:{trib}", "role": "TRIB", "parsed": parsed}
                 )
-            chances = trib_chances(run)
             effect_lines = [
-                f"{i}. {choice['text']}｜成功率 {chance}%"
-                for i, (choice, chance) in enumerate(zip(choices, chances), 1)
+                f"{i}. {choice['text']}"
+                for i, choice in enumerate(choices, 1)
             ]
         else:
             effects = (args.e1, args.e2, args.e3)
@@ -768,7 +780,7 @@ def cmd_inscribe(args: argparse.Namespace) -> None:
                     }
                 )
                 effect_lines.append(
-                    f"{i}. {text}｜{slot['role']}｜{fmt_effect(parsed)}"
+                    f"{i}. {text}"
                 )
     except ValueError as exc:
         die(str(exc))
@@ -1343,19 +1355,10 @@ def cmd_use(args: argparse.Namespace) -> None:
 
 def _render_choosing(st: dict[str, Any]) -> str:
     run = st["run"]
-    if run["node_type"] == "tribulation":
-        effect_lines = [
-            f"{i}. {choice['text']}｜成功率 {chance}%"
-            for i, (choice, chance) in enumerate(
-                zip(run["choices"], trib_chances(run)),
-                1,
-            )
-        ]
-    else:
-        effect_lines = [
-            f"{i}. {choice['text']}｜{choice['role']}｜{fmt_effect(choice['parsed'])}"
-            for i, choice in enumerate(run["choices"], 1)
-        ]
+    effect_lines = [
+        f"{i}. {choice['text']}"
+        for i, choice in enumerate(run["choices"], 1)
+    ]
     return "\n".join([run["body"], "", *effect_lines])
 
 
@@ -1542,6 +1545,8 @@ def build_parser() -> Parser:
     ins.add_argument("--e1", default=None)
     ins.add_argument("--e2", default=None)
     ins.add_argument("--e3", default=None)
+    ins.add_argument("--mode", default=None, choices=("travel", "fork"))
+    ins.add_argument("--gain", default=None)
     ins.set_defaults(func=cmd_inscribe)
     choose = sub.add_parser("choose")
     choose.add_argument("--n", type=int, choices=(1, 2, 3), required=True)

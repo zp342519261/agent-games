@@ -14,6 +14,7 @@ import xiuxian_engine as xx
 
 
 OUTLINE = "青州郊外废弃矿洞深处传来低语，洞口摆着三盏来历不明的灯。"
+TRIB_BODY = "天劫云压顶，三道雷纹在识海里转。系统冷冰冰列出三条渡法。"
 
 
 def run(argv: list[str]) -> tuple[int, str, str]:
@@ -40,6 +41,7 @@ def inscribe_ok(st=None):
     roles = [s["role"] for s in st["run"]["slots"]]
     args = [
         "inscribe",
+        "--mode", "fork",
         "--outline", OUTLINE,
         "--body", "矿洞深处三盏灯摇晃，像在等人选路。风里有铁锈和药味。",
         "--c1", "走近左灯",
@@ -232,6 +234,7 @@ class TestInscribe(CwdTest):
         code, _, err = run(
             [
                 "inscribe",
+                "--mode", "fork",
                 "--body", "矿洞深处三盏灯摇晃，像在等人选路。风里有铁锈和药味。",
                 "--c1", "走近左灯",
                 "--c2", "走近中灯",
@@ -244,6 +247,43 @@ class TestInscribe(CwdTest):
         self.assertNotEqual(code, 0)
         self.assertIn("ERROR", err)
 
+    def test_inscribe_requires_mode(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        st = xx.load_state()
+        roles = [s["role"] for s in st["run"]["slots"]]
+        code, _, err = run(
+            [
+                "inscribe",
+                "--outline", OUTLINE,
+                "--body", "矿洞深处三盏灯摇晃，像在等人选路。风里有铁锈和药味。",
+                "--c1", "走近左灯",
+                "--c2", "走近中灯",
+                "--c3", "走近右灯",
+                "--e1", _e_for(roles[0]),
+                "--e2", _e_for(roles[1]),
+                "--e3", _e_for(roles[2]),
+            ]
+        )
+        self.assertNotEqual(code, 0)
+        self.assertIn("ERROR", err)
+        self.assertEqual(xx.load_state()["status"], "composing")
+
+    def test_fork_ui_hides_roles_and_rewards(self):
+        run(["init"])
+        run(["start", "--seed", "1"])
+        code, out, err = inscribe_ok()
+        self.assertEqual((code, err), (0, ""))
+        self.assertIn("1. 走近左灯", out)
+        self.assertIn("2. 走近中灯", out)
+        self.assertIn("3. 走近右灯", out)
+        self.assertNotIn("SAFE", out)
+        self.assertNotIn("GREEDY", out)
+        self.assertNotIn("WEIRD", out)
+        self.assertNotIn("气血+", out)
+        self.assertNotIn("%", out)
+        self.assertEqual(xx.load_state()["status"], "choosing")
+
     def test_outline_too_short(self):
         run(["init"])
         run(["start", "--seed", "1"])
@@ -252,6 +292,7 @@ class TestInscribe(CwdTest):
         code, _, err = run(
             [
                 "inscribe",
+                "--mode", "fork",
                 "--outline", "太短了",
                 "--body", "矿洞深处三盏灯摇晃，像在等人选路。风里有铁锈和药味。",
                 "--c1", "走近左灯",
@@ -307,7 +348,7 @@ class TestInscribe(CwdTest):
         st["run"]["slots"] = []
         xx.save_state(st)
         args = [
-            "inscribe", "--outline", OUTLINE, "--body", "劫云压城，三条生路同时显现。",
+            "inscribe", "--mode", "fork", "--outline", OUTLINE, "--body", TRIB_BODY,
             "--c1", "硬渡", "--c2", "护体", "--c3", "问心", "--e1", "hp+4",
         ]
         code, _, err = run(args)
@@ -315,7 +356,9 @@ class TestInscribe(CwdTest):
         self.assertIn("ERROR", err)
         code, out, err = run(args[:-2])
         self.assertEqual((code, err), (0, ""))
-        self.assertIn("成功率", out)
+        self.assertIn("1. 硬渡", out)
+        self.assertNotIn("成功率", out)
+        self.assertNotIn("%", out)
         choices = xx.load_state()["run"]["choices"]
         self.assertEqual(
             [choice["effect"] for choice in choices],
@@ -337,8 +380,9 @@ class TestInscribe(CwdTest):
         code, _, err = run(
             [
                 "inscribe",
+                "--mode", "fork",
                 "--outline", OUTLINE,
-                "--body", "劫云压城，三条生路同时显现。",
+                "--body", TRIB_BODY,
                 "--c1", "硬渡", "--c2", "护体", "--c3", "心魔问道",
             ]
         )
@@ -347,9 +391,11 @@ class TestInscribe(CwdTest):
         code, out, err = run(["info"])
 
         self.assertEqual((code, err), (0, ""))
-        self.assertIn("1. 硬渡｜成功率 12%", out)
-        self.assertIn("2. 护体｜成功率 40%", out)
-        self.assertIn("3. 心魔问道｜成功率 5%", out)
+        self.assertIn("1. 硬渡", out)
+        self.assertIn("2. 护体", out)
+        self.assertIn("3. 心魔问道", out)
+        self.assertNotIn("成功率", out)
+        self.assertNotIn("%", out)
 
 
 class TestTribulation(CwdTest):
@@ -366,8 +412,9 @@ class TestTribulation(CwdTest):
         return run(
             [
                 "inscribe",
+                "--mode", "fork",
                 "--outline", OUTLINE,
-                "--body", "天劫云压顶，三道雷纹在识海里转。系统冷冰冰列出三条渡法。",
+                "--body", TRIB_BODY,
                 "--c1", "硬渡",
                 "--c2", "护体",
                 "--c3", "心魔问道",
@@ -921,7 +968,7 @@ class TestChronicle(CwdTest):
         run(["choose", "--n", "1"])
         before = xx.load_state()
 
-        code, _, err = run(["inscribe", "--outline", "太短"])
+        code, _, err = run(["inscribe", "--mode", "fork", "--outline", "太短"])
 
         self.assertNotEqual(code, 0)
         self.assertIn("ERROR", err)
