@@ -5,6 +5,9 @@
 .spy/
 .bj/
 .idiom/
+.adv/
+.case/
+.juben/
 
 # Python
 __pycache__/

@@ -12,6 +12,9 @@
 | [spy](skills/spy/) | 谁是卧底（词对社交推理） | `/卧底` |
 | [bj](skills/bj/) | 二十一点（引擎发牌结算） | `/二十一点` |
 | [idiom](skills/idiom/) | 成语接龙（词库校验） | `/成语接龙` |
+| [adv](skills/adv/) | 文字冒险（分支叙事，引擎锁剧情图） | `/冒险` |
+| [case](skills/case/) | 探案推理（搜证与指控，引擎锁真凶） | `/探案` |
+| [juben](skills/juben/) | 剧本杀（角色本与投票，引擎锁真凶） | `/剧本杀` |
 
 ## 安装（Cursor）
 
@@ -51,6 +54,24 @@ npx skills add zp342519261/agent-games -g -a cursor -s bj -y
 npx skills add zp342519261/agent-games -g -a cursor -s idiom -y
 ```
 
+只装文字冒险：
+
+```bash
+npx skills add zp342519261/agent-games -g -a cursor -s adv -y
+```
+
+只装探案：
+
+```bash
+npx skills add zp342519261/agent-games -g -a cursor -s case -y
+```
+
+只装剧本杀：
+
+```bash
+npx skills add zp342519261/agent-games -g -a cursor -s juben -y
+```
+
 - `-g`：装到 `~/.cursor/skills/<skill名>`（全局）
 - `-a cursor`：只给 Cursor
 - `-s <skill名>`：从这个合集只装这一款
@@ -71,7 +92,10 @@ agent-games/
     ├── xiuxian/       # 修仙肉鸽（轮回系统）
     ├── spy/           # 谁是卧底
     ├── bj/            # 二十一点
-    └── idiom/         # 成语接龙
+    ├── idiom/         # 成语接龙
+    ├── adv/           # 文字冒险
+    ├── case/          # 探案推理
+    └── juben/         # 剧本杀
 ```
 
 以后加游戏：在 `skills/` 下新建目录，内含自己的 `SKILL.md`。
