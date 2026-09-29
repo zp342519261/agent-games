@@ -9,6 +9,9 @@
 | [nlhe](skills/nlhe/) | 6-max 德州扑克 GTO 教学桌 | `/NLHE` |
 | [soup](skills/soup/) | 海龟汤（Agent 当汤主，现编现猜） | `/海龟汤` |
 | [xiuxian](skills/xiuxian/) | 修仙肉鸽（轮回系统） | `/修仙` |
+| [spy](skills/spy/) | 谁是卧底（词对社交推理） | `/卧底` |
+| [bj](skills/bj/) | 二十一点（引擎发牌结算） | `/二十一点` |
+| [idiom](skills/idiom/) | 成语接龙（词库校验） | `/成语接龙` |
 
 ## 安装（Cursor）
 
@@ -30,6 +33,24 @@ npx skills add zp342519261/agent-games -g -a cursor -s soup -y
 npx skills add zp342519261/agent-games -g -a cursor -s xiuxian -y
 ```
 
+只装谁是卧底：
+
+```bash
+npx skills add zp342519261/agent-games -g -a cursor -s spy -y
+```
+
+只装二十一点：
+
+```bash
+npx skills add zp342519261/agent-games -g -a cursor -s bj -y
+```
+
+只装成语接龙：
+
+```bash
+npx skills add zp342519261/agent-games -g -a cursor -s idiom -y
+```
+
 - `-g`：装到 `~/.cursor/skills/<skill名>`（全局）
 - `-a cursor`：只给 Cursor
 - `-s <skill名>`：从这个合集只装这一款
@@ -47,7 +68,10 @@ agent-games/
 └── skills/
     ├── nlhe/          # 德州扑克 GTO 教学桌
     ├── soup/          # 海龟汤（Agent 当汤主，现编现猜）
-    └── xiuxian/       # 修仙肉鸽（轮回系统）
+    ├── xiuxian/       # 修仙肉鸽（轮回系统）
+    ├── spy/           # 谁是卧底
+    ├── bj/            # 二十一点
+    └── idiom/         # 成语接龙
 ```
 
 以后加游戏：在 `skills/` 下新建目录，内含自己的 `SKILL.md`。

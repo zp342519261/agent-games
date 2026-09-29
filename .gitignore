@@ -2,6 +2,9 @@
 .nlhe/
 .soup/
 .xiuxian/
+.spy/
+.bj/
+.idiom/
 
 # Python
 __pycache__/
